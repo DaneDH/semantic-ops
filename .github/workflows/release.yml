@@ -1,0 +1,70 @@
+name: Release
+
+# Dogfoods this repo's own compute/release actions to version and tag itself.
+# Branch patterns here mirror semantic-ops.yml's branch_postfix_rules
+# (alpha/beta channels) plus main_branch, so we don't tag every stray branch.
+on:
+  push:
+    branches:
+      - main
+      - 'alpha/**'
+      - 'beta/**'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      - name: Ensure committed dist/ matches source
+        run: git diff --exit-code compute/dist release/dist
+
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ steps.version.outputs.tag_name }}
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.postfix != '' }}
+      bump_type: ${{ steps.version.outputs.bump_type }}
+      postfix: ${{ steps.version.outputs.postfix }}
+      previous_version: ${{ steps.version.outputs.previous_version }}
+      commit_messages: ${{ steps.version.outputs.commit_messages }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # required: compute reads tags and commit history locally via git
+
+      - id: version
+        uses: ./compute
+
+  release:
+    needs: [verify, version]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./release
+        with:
+          tag_name: ${{ needs.version.outputs.tag_name }}
+          version: ${{ needs.version.outputs.version }}
+          sha: ${{ github.sha }}
+          prerelease: ${{ needs.version.outputs.prerelease }}
+          bump_type: ${{ needs.version.outputs.bump_type }}
+          postfix: ${{ needs.version.outputs.postfix }}
+          previous_version: ${{ needs.version.outputs.previous_version }}
+          commit_messages: ${{ needs.version.outputs.commit_messages }}

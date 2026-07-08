@@ -1,0 +1,32 @@
+main_branch: main
+tag_prefix: v
+default_bump: patch
+precedence: commit-first
+default_postfix: ""
+initial_version: "1.0.0"     # first release on a channel with no prior tag -- used as-is, no bump applied
+
+branch_rules:
+  major:
+    - '^release/major/'
+  minor:
+    - '^feature/'
+    - '^release/minor/'
+  patch:
+    - '^hotfix/'
+    - '^bugfix/'
+
+commit_rules:
+  major:
+    - '^BREAKING CHANGE'
+    - '!:'
+  minor:
+    - '^feat(\(.+\))?:'
+    - '^feature/'
+  patch:
+    - '^fix(\(.+\))?:'
+
+branch_postfix_rules:
+  - pattern: '^alpha/|/alpha$'
+    postfix: alpha
+  - pattern: '^beta/|/beta$'
+    postfix: beta

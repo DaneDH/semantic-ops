@@ -1,0 +1,34 @@
+{
+  "name": "semantic-ops",
+  "version": "0.0.0",
+  "private": true,
+  "description": "GitHub Actions for computing the next semantic version from the latest tag/release, and for tagging + releasing it",
+  "scripts": {
+    "build:compute": "ncc build src/compute/index.ts -o compute/dist --source-map --license licenses.txt",
+    "build:release": "ncc build src/release/index.ts -o release/dist --source-map --license licenses.txt",
+    "build": "npm run build:compute && npm run build:release",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "package": "npm run build",
+    "dry-run": "tsx scripts/local-dry-run.ts"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@actions/core": "^1.10.1",
+    "@actions/exec": "^1.1.1",
+    "@actions/github": "^6.0.0",
+    "js-yaml": "^4.1.0",
+    "semver": "^7.6.3",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.14.0",
+    "@types/semver": "^7.5.8",
+    "@vercel/ncc": "^0.38.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.1.1"
+  }
+}

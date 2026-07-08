@@ -1,0 +1,33 @@
+name: 'Semantic Ops - Compute'
+description: 'Computes the next semantic version from the latest tag/release for the resolved branch channel. Does not create any tag or release.'
+author: 'semantic-ops'
+
+inputs:
+  config_path:
+    description: 'Path to the semantic-ops YAML config file, relative to the repo root.'
+    required: false
+    default: 'semantic-ops.yml'
+
+outputs:
+  version:
+    description: 'Computed next version (e.g. 1.33.0-alpha or 2.12.29), without tag_prefix.'
+  previous_version:
+    description: 'Baseline version that was bumped from, within the same postfix channel.'
+  bump_type:
+    description: 'Resolved bump type: major, minor, or patch.'
+  postfix:
+    description: 'Resolved postfix/prerelease label (e.g. alpha, beta), or empty string if none.'
+  build_number:
+    description: 'Build number in the form ${run_number}.${short_sha} e.g. 102.8edwfac'
+  run_id:
+    description: 'The GitHub Actions run ID.'
+  sha:
+    description: 'Full commit SHA that was versioned.'
+  tag_name:
+    description: 'The exact tag name (tag_prefix + version) the release action should create for this run.'
+  commit_messages:
+    description: 'Newline-separated subject lines of every commit since the baseline tag on this channel -- pass through to the release action to build a release body.'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'

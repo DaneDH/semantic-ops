@@ -1,0 +1,48 @@
+name: 'Semantic Ops - Release'
+description: 'Creates the annotated git tag + GitHub Release for a version previously computed by the Semantic Ops compute action.'
+author: 'semantic-ops'
+
+inputs:
+  tag_name:
+    description: 'Exact tag name to create, e.g. the "tag_name" output from the compute action.'
+    required: true
+  sha:
+    description: 'Commit SHA to tag, e.g. the "sha" output from the compute action or github.sha.'
+    required: true
+  version:
+    description: 'Version string used as the Release title, e.g. the "version" output from the compute action.'
+    required: true
+  prerelease:
+    description: 'Whether to mark the GitHub Release as a prerelease, e.g. derived from the compute action''s "postfix" output being non-empty.'
+    required: true
+    default: 'false'
+  bump_type:
+    description: 'Resolved bump type, e.g. the compute action''s "bump_type" output. When provided (non-empty), the release body is built from bump_type/postfix/previous_version/commit_messages instead of GitHub''s auto-generated notes.'
+    required: false
+    default: ''
+  postfix:
+    description: 'Resolved postfix/channel, e.g. the compute action''s "postfix" output. Only used to build the release body when bump_type is set.'
+    required: false
+    default: ''
+  previous_version:
+    description: 'Baseline version bumped from, e.g. the compute action''s "previous_version" output. Only used to build the release body when bump_type is set.'
+    required: false
+    default: ''
+  commit_messages:
+    description: 'Newline-separated commit messages included in this release, e.g. the compute action''s "commit_messages" output. Only used to build the release body when bump_type is set.'
+    required: false
+    default: ''
+  github_token:
+    description: 'Token used to create the tag and GitHub Release. Requires contents:write permission.'
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  release_id:
+    description: 'The numeric ID of the created GitHub Release.'
+  release_url:
+    description: 'The HTML URL of the created GitHub Release.'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
