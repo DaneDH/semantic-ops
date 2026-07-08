@@ -4,7 +4,7 @@ import { resolvePostfix } from './postfix';
 import { findBaselineTag } from './baseline';
 import { resolveBump } from './bump';
 import { computeNextVersion } from './version';
-import { listTags, getCommitMessagesSince } from './commits';
+import { listTags, getCommitMessagesSince, COMMIT_MESSAGE_SEPARATOR } from './commits';
 import { resolveRunContext, getOctokit, repoInfo } from './github';
 import { buildOutputs } from './outputs';
 import { createTagAndRelease } from './release';
@@ -60,9 +60,9 @@ async function runRelease(): Promise<void> {
   const previousVersion = core.getInput('previous_version');
   const commitMessages = core
     .getInput('commit_messages')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+    .split(COMMIT_MESSAGE_SEPARATOR)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
 
   // Only build a custom body when the caller supplied enough context to make
   // one meaningful; otherwise fall back to GitHub's auto-generated notes.

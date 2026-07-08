@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildOutputs, shortSha } from '../src/outputs';
+import { COMMIT_MESSAGE_SEPARATOR } from '../src/commits';
 
 describe('shortSha', () => {
   it('defaults to a 7-character short SHA', () => {
@@ -30,8 +31,29 @@ describe('buildOutputs', () => {
       run_id: '123456789',
       sha: '8edwfac2abcdef1234567890',
       tag_name: 'v1.33.0-alpha',
-      commit_messages: 'feat: add thing\nfix: bug',
+      commit_messages: `feat: add thing${COMMIT_MESSAGE_SEPARATOR}fix: bug`,
     });
+  });
+
+  it('preserves embedded newlines within a single multi-line commit message', () => {
+    const outputs = buildOutputs({
+      version: '1.0.0',
+      previousVersion: '',
+      bumpType: 'minor',
+      postfix: '',
+      sha: 'abc1234567890',
+      runId: 1,
+      runNumber: 1,
+      tagPrefix: 'v',
+      commitMessages: ['feat: add thing\n\nWith a body line.', 'fix: bug'],
+    });
+    expect(outputs.commit_messages).toBe(
+      `feat: add thing\n\nWith a body line.${COMMIT_MESSAGE_SEPARATOR}fix: bug`,
+    );
+    expect(outputs.commit_messages.split(COMMIT_MESSAGE_SEPARATOR)).toEqual([
+      'feat: add thing\n\nWith a body line.',
+      'fix: bug',
+    ]);
   });
 
   it('supports an empty tag_prefix and no commit messages', () => {

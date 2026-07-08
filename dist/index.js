@@ -36908,6 +36908,11 @@ const SEVERITY_ORDER = ['major', 'minor', 'patch'];
 function anyPatternMatches(patterns, text) {
     return patterns.some((pattern) => new RegExp(pattern).test(text));
 }
+/** First line of a (possibly multi-line, subject + body) commit message. */
+function subjectLine(commitMessage) {
+    const newlineIndex = commitMessage.indexOf('\n');
+    return newlineIndex === -1 ? commitMessage : commitMessage.slice(0, newlineIndex);
+}
 /**
  * Rules are grouped by bump level (major/minor/patch arrays of patterns).
  * The highest-severity level with at least one matching pattern wins,
@@ -36921,13 +36926,17 @@ function matchBranchRules(branchName, rules) {
     return null;
 }
 /**
- * Scans every commit message against commit_rules and returns the
- * highest-severity level with at least one matching pattern across any
- * commit (major > minor > patch).
+ * Scans every commit's subject line (not the full body -- commit messages
+ * may now carry a full body for release-notes purposes, and matching
+ * against body prose risks an incidental substring match, e.g. a sentence
+ * mentioning "fix:" that isn't a Conventional Commits type marker) against
+ * commit_rules, returning the highest-severity level with at least one
+ * matching subject (major > minor > patch).
  */
 function matchCommitRules(commitMessages, rules) {
+    const subjects = commitMessages.map(subjectLine);
     for (const level of SEVERITY_ORDER) {
-        if (commitMessages.some((message) => anyPatternMatches(rules[level], message))) {
+        if (subjects.some((subject) => anyPatternMatches(rules[level], subject))) {
             return level;
         }
     }
@@ -36953,13 +36962,21 @@ function resolveBump(branchName, commitMessages, config) {
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.GitError = void 0;
+exports.COMMIT_MESSAGE_SEPARATOR = exports.GitError = void 0;
 exports.listTags = listTags;
 exports.getCommitMessagesSince = getCommitMessagesSince;
 const exec_1 = __nccwpck_require__(5236);
 class GitError extends Error {
 }
 exports.GitError = GitError;
+/**
+ * Delimiter used both to split `git log` output into individual commit
+ * messages and to serialize/deserialize the commit_messages GitHub Actions
+ * output across the compute -> release step boundary. A control character,
+ * not a substring humans type in commit messages, so multi-line commit
+ * bodies never get misinterpreted as multiple commits.
+ */
+exports.COMMIT_MESSAGE_SEPARATOR = '\x1e';
 /**
  * Lists all local tags. Requires the checkout step to have fetched tags
  * (e.g. actions/checkout with fetch-depth: 0), documented as a precondition.
@@ -36975,24 +36992,23 @@ async function listTags() {
         .filter((line) => line.length > 0);
 }
 /**
- * Returns commit subject lines since baselineTag (exclusive) up to HEAD.
- * If baselineTag is null (cold start / no prior tag on this channel), returns
- * every commit message reachable from HEAD.
+ * Returns full commit messages (subject + body) since baselineTag (exclusive)
+ * up to HEAD. If baselineTag is null (cold start / no prior tag on this
+ * channel), returns every commit message reachable from HEAD. The full body
+ * is preserved (not just the subject line) so release notes built from these
+ * can serve as real documentation, not just a list of one-liners.
  */
 async function getCommitMessagesSince(baselineTag) {
     const range = baselineTag ? `${baselineTag}..HEAD` : 'HEAD';
-    const result = await (0, exec_1.getExecOutput)('git', ['log', range, '--pretty=%s'], {
-        silent: true,
-        ignoreReturnCode: true,
-    });
+    const result = await (0, exec_1.getExecOutput)('git', ['log', range, `--pretty=format:%B${exports.COMMIT_MESSAGE_SEPARATOR}`], { silent: true, ignoreReturnCode: true });
     if (result.exitCode !== 0) {
         throw new GitError(`"git log ${range}" failed: ${result.stderr.trim()}. ` +
             'Ensure actions/checkout uses fetch-depth: 0 so the baseline tag and full commit history are available locally.');
     }
     return result.stdout
-        .split('\n')
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0);
+        .split(exports.COMMIT_MESSAGE_SEPARATOR)
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0);
 }
 
 
@@ -37329,9 +37345,9 @@ async function runRelease() {
     const previousVersion = core.getInput('previous_version');
     const commitMessages = core
         .getInput('commit_messages')
-        .split('\n')
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0);
+        .split(commits_1.COMMIT_MESSAGE_SEPARATOR)
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0);
     // Only build a custom body when the caller supplied enough context to make
     // one meaningful; otherwise fall back to GitHub's auto-generated notes.
     const body = bumpType
@@ -37372,13 +37388,14 @@ run().catch((err) => {
 /***/ }),
 
 /***/ 7729:
-/***/ ((__unused_webpack_module, exports) => {
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.shortSha = shortSha;
 exports.buildOutputs = buildOutputs;
+const commits_1 = __nccwpck_require__(5477);
 const SHORT_SHA_LENGTH = 7;
 function shortSha(sha, length = SHORT_SHA_LENGTH) {
     return sha.slice(0, length);
@@ -37393,7 +37410,7 @@ function buildOutputs(params) {
         run_id: String(params.runId),
         sha: params.sha,
         tag_name: `${params.tagPrefix}${params.version}`,
-        commit_messages: params.commitMessages.join('\n'),
+        commit_messages: params.commitMessages.join(commits_1.COMMIT_MESSAGE_SEPARATOR),
     };
 }
 
@@ -37509,8 +37526,20 @@ function buildReleaseBody(params) {
     lines.push('');
     if (commitMessages.length > 0) {
         lines.push('**Commits included in this release:**');
+        lines.push('');
         for (const message of commitMessages) {
-            lines.push(`- ${message}`);
+            const [subject, ...bodyLines] = message.split('\n');
+            lines.push(`- ${subject}`);
+            const body = bodyLines.join('\n').trim();
+            if (body) {
+                lines.push('');
+                for (const bodyLine of body.split('\n')) {
+                    // Indented to nest under the bullet as a continuation paragraph
+                    // in GitHub-flavored markdown, instead of breaking the list.
+                    lines.push(bodyLine.length > 0 ? `  ${bodyLine}` : '');
+                }
+                lines.push('');
+            }
         }
     }
     else {

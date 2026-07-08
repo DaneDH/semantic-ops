@@ -1,4 +1,5 @@
 import { BumpType } from './config.schema';
+import { COMMIT_MESSAGE_SEPARATOR } from './commits';
 
 const SHORT_SHA_LENGTH = 7;
 
@@ -38,6 +39,6 @@ export function buildOutputs(params: {
     run_id: String(params.runId),
     sha: params.sha,
     tag_name: `${params.tagPrefix}${params.version}`,
-    commit_messages: params.commitMessages.join('\n'),
+    commit_messages: params.commitMessages.join(COMMIT_MESSAGE_SEPARATOR),
   };
 }

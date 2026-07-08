@@ -27,8 +27,20 @@ export function buildReleaseBody(params: ReleaseNotesParams): string {
 
   if (commitMessages.length > 0) {
     lines.push('**Commits included in this release:**');
+    lines.push('');
     for (const message of commitMessages) {
-      lines.push(`- ${message}`);
+      const [subject, ...bodyLines] = message.split('\n');
+      lines.push(`- ${subject}`);
+      const body = bodyLines.join('\n').trim();
+      if (body) {
+        lines.push('');
+        for (const bodyLine of body.split('\n')) {
+          // Indented to nest under the bullet as a continuation paragraph
+          // in GitHub-flavored markdown, instead of breaking the list.
+          lines.push(bodyLine.length > 0 ? `  ${bodyLine}` : '');
+        }
+        lines.push('');
+      }
     }
   } else {
     lines.push('_No commits since the previous release on this channel._');

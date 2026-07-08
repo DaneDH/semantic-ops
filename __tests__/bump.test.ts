@@ -52,6 +52,16 @@ describe('matchCommitRules', () => {
   it('returns null when nothing matches', () => {
     expect(matchCommitRules(['chore: unrelated'], commitRules)).toBeNull();
   });
+
+  it('only matches against the subject line, ignoring the commit body', () => {
+    const messages = ['chore: unrelated\n\nThis paragraph happens to mention fix: in prose, not as a type.'];
+    expect(matchCommitRules(messages, commitRules)).toBeNull();
+  });
+
+  it('still matches when the subject line itself qualifies, regardless of body content', () => {
+    const messages = ['fix: real bug\n\nSome unrelated body text about feat: something else entirely.'];
+    expect(matchCommitRules(messages, commitRules)).toBe('patch');
+  });
 });
 
 describe('resolveBump', () => {

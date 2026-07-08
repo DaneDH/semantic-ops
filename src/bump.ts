@@ -6,6 +6,12 @@ function anyPatternMatches(patterns: string[], text: string): boolean {
   return patterns.some((pattern) => new RegExp(pattern).test(text));
 }
 
+/** First line of a (possibly multi-line, subject + body) commit message. */
+function subjectLine(commitMessage: string): string {
+  const newlineIndex = commitMessage.indexOf('\n');
+  return newlineIndex === -1 ? commitMessage : commitMessage.slice(0, newlineIndex);
+}
+
 /**
  * Rules are grouped by bump level (major/minor/patch arrays of patterns).
  * The highest-severity level with at least one matching pattern wins,
@@ -19,13 +25,17 @@ export function matchBranchRules(branchName: string, rules: BumpRuleSet): BumpTy
 }
 
 /**
- * Scans every commit message against commit_rules and returns the
- * highest-severity level with at least one matching pattern across any
- * commit (major > minor > patch).
+ * Scans every commit's subject line (not the full body -- commit messages
+ * may now carry a full body for release-notes purposes, and matching
+ * against body prose risks an incidental substring match, e.g. a sentence
+ * mentioning "fix:" that isn't a Conventional Commits type marker) against
+ * commit_rules, returning the highest-severity level with at least one
+ * matching subject (major > minor > patch).
  */
 export function matchCommitRules(commitMessages: string[], rules: BumpRuleSet): BumpType | null {
+  const subjects = commitMessages.map(subjectLine);
   for (const level of SEVERITY_ORDER) {
-    if (commitMessages.some((message) => anyPatternMatches(rules[level], message))) {
+    if (subjects.some((subject) => anyPatternMatches(rules[level], subject))) {
       return level;
     }
   }
