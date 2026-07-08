@@ -2,11 +2,9 @@
   "name": "semantic-ops",
   "version": "0.0.0",
   "private": true,
-  "description": "GitHub Actions for computing the next semantic version from the latest tag/release, and for tagging + releasing it",
+  "description": "GitHub Action that computes the next semantic version from the latest tag/release, and creates the git tag + GitHub Release for it",
   "scripts": {
-    "build:compute": "ncc build src/compute/index.ts -o compute/dist --source-map --license licenses.txt",
-    "build:release": "ncc build src/release/index.ts -o release/dist --source-map --license licenses.txt",
-    "build": "npm run build:compute && npm run build:release",
+    "build": "ncc build src/index.ts -o dist --source-map --license licenses.txt",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

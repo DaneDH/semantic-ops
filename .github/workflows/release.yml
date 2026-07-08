@@ -1,38 +1,59 @@
 name: Release
 
-# Dogfoods this repo's own compute/release actions to version and tag itself.
-# Branch patterns here mirror semantic-ops.yml's branch_postfix_rules
-# (alpha/beta channels) plus main_branch, so we don't tag every stray branch.
+# Dogfoods this repo's own Semantic Ops action (compute mode, then release mode)
+# to version and tag itself. Branch patterns here mirror semantic-ops.yml's
+# branch_postfix_rules (alpha/beta channels) plus main_branch, so we don't tag
+# every stray branch. Each check below also runs on every pull request, so
+# failures are caught before merge, not just before tagging.
 on:
   push:
     branches:
       - main
       - 'alpha/**'
       - 'beta/**'
+  pull_request:
 
 permissions:
   contents: read
 
 jobs:
-  verify:
+  typecheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-
       - run: npm ci
       - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
 
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
       - name: Ensure committed dist/ matches source
-        run: git diff --exit-code compute/dist release/dist
+        run: git diff --exit-code dist
 
   version:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     outputs:
       tag_name: ${{ steps.version.outputs.tag_name }}
@@ -45,21 +66,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # required: compute reads tags and commit history locally via git
+          fetch-depth: 0 # required: compute mode reads tags and commit history locally via git
 
       - id: version
-        uses: ./compute
+        uses: ./
+        with:
+          mode: compute
 
   release:
-    needs: [verify, version]
+    if: github.event_name == 'push'
+    needs: [typecheck, test, build, version]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
 
-      - uses: ./release
+      - uses: ./
         with:
+          mode: release
           tag_name: ${{ needs.version.outputs.tag_name }}
           version: ${{ needs.version.outputs.version }}
           sha: ${{ github.sha }}

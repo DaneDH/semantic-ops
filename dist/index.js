@@ -36998,90 +36998,6 @@ async function getCommitMessagesSince(baselineTag) {
 
 /***/ }),
 
-/***/ 629:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-const core = __importStar(__nccwpck_require__(7484));
-const config_1 = __nccwpck_require__(2973);
-const postfix_1 = __nccwpck_require__(1718);
-const baseline_1 = __nccwpck_require__(9860);
-const bump_1 = __nccwpck_require__(2123);
-const version_1 = __nccwpck_require__(311);
-const commits_1 = __nccwpck_require__(5477);
-const github_1 = __nccwpck_require__(9248);
-const outputs_1 = __nccwpck_require__(7729);
-async function run() {
-    const configPath = core.getInput('config_path') || 'semantic-ops.yml';
-    const config = (0, config_1.loadConfig)(configPath);
-    const { branchName, sha, runId, runNumber } = (0, github_1.resolveRunContext)();
-    const postfix = (0, postfix_1.resolvePostfix)(branchName, config);
-    core.info(`Resolved branch "${branchName}" -> postfix channel "${postfix || '(none)'}"`);
-    const tags = await (0, commits_1.listTags)();
-    const baseline = (0, baseline_1.findBaselineTag)(tags, postfix, config.tag_prefix);
-    core.info(`Baseline version for this channel: ${baseline ? baseline.raw : `(none, cold start from ${config.initial_version})`}`);
-    const commitMessages = await (0, commits_1.getCommitMessagesSince)(baseline ? `${config.tag_prefix}${baseline.raw}` : null);
-    const bumpType = (0, bump_1.resolveBump)(branchName, commitMessages, config);
-    core.info(`Resolved bump type: ${bumpType}`);
-    const version = (0, version_1.computeNextVersion)(baseline, bumpType, postfix, config.initial_version);
-    const outputs = (0, outputs_1.buildOutputs)({
-        version,
-        previousVersion: baseline ? baseline.raw : '',
-        bumpType,
-        postfix,
-        sha,
-        runId,
-        runNumber,
-        tagPrefix: config.tag_prefix,
-        commitMessages,
-    });
-    for (const [key, value] of Object.entries(outputs)) {
-        core.setOutput(key, value);
-    }
-    core.info(`Computed version: ${outputs.version} (build ${outputs.build_number}, tag ${outputs.tag_name})`);
-}
-run().catch((err) => {
-    core.setFailed(err instanceof Error ? err.message : String(err));
-});
-
-
-/***/ }),
-
 /***/ 1848:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -37323,6 +37239,138 @@ function repoInfo() {
 
 /***/ }),
 
+/***/ 9407:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+const core = __importStar(__nccwpck_require__(7484));
+const config_1 = __nccwpck_require__(2973);
+const postfix_1 = __nccwpck_require__(1718);
+const baseline_1 = __nccwpck_require__(9860);
+const bump_1 = __nccwpck_require__(2123);
+const version_1 = __nccwpck_require__(311);
+const commits_1 = __nccwpck_require__(5477);
+const github_1 = __nccwpck_require__(9248);
+const outputs_1 = __nccwpck_require__(7729);
+const release_1 = __nccwpck_require__(4202);
+const releaseNotes_1 = __nccwpck_require__(8721);
+async function runCompute() {
+    const configPath = core.getInput('config_path') || 'semantic-ops.yml';
+    const config = (0, config_1.loadConfig)(configPath);
+    const { branchName, sha, runId, runNumber } = (0, github_1.resolveRunContext)();
+    const postfix = (0, postfix_1.resolvePostfix)(branchName, config);
+    core.info(`Resolved branch "${branchName}" -> postfix channel "${postfix || '(none)'}"`);
+    const tags = await (0, commits_1.listTags)();
+    const baseline = (0, baseline_1.findBaselineTag)(tags, postfix, config.tag_prefix);
+    core.info(`Baseline version for this channel: ${baseline ? baseline.raw : `(none, cold start from ${config.initial_version})`}`);
+    const commitMessages = await (0, commits_1.getCommitMessagesSince)(baseline ? `${config.tag_prefix}${baseline.raw}` : null);
+    const bumpType = (0, bump_1.resolveBump)(branchName, commitMessages, config);
+    core.info(`Resolved bump type: ${bumpType}`);
+    const version = (0, version_1.computeNextVersion)(baseline, bumpType, postfix, config.initial_version);
+    const outputs = (0, outputs_1.buildOutputs)({
+        version,
+        previousVersion: baseline ? baseline.raw : '',
+        bumpType,
+        postfix,
+        sha,
+        runId,
+        runNumber,
+        tagPrefix: config.tag_prefix,
+        commitMessages,
+    });
+    for (const [key, value] of Object.entries(outputs)) {
+        core.setOutput(key, value);
+    }
+    core.info(`Computed version: ${outputs.version} (build ${outputs.build_number}, tag ${outputs.tag_name})`);
+}
+async function runRelease() {
+    const tagName = core.getInput('tag_name', { required: true });
+    const sha = core.getInput('sha', { required: true });
+    const version = core.getInput('version', { required: true });
+    const prerelease = core.getBooleanInput('prerelease');
+    const token = core.getInput('github_token', { required: true });
+    const bumpType = core.getInput('bump_type');
+    const postfix = core.getInput('postfix');
+    const previousVersion = core.getInput('previous_version');
+    const commitMessages = core
+        .getInput('commit_messages')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+    // Only build a custom body when the caller supplied enough context to make
+    // one meaningful; otherwise fall back to GitHub's auto-generated notes.
+    const body = bumpType
+        ? (0, releaseNotes_1.buildReleaseBody)({ bumpType, postfix, previousVersion, commitMessages })
+        : undefined;
+    const octokit = (0, github_1.getOctokit)(token);
+    const { owner, repo } = (0, github_1.repoInfo)();
+    const result = await (0, release_1.createTagAndRelease)(octokit, {
+        owner,
+        repo,
+        tagName,
+        sha,
+        version,
+        prerelease,
+        body,
+    });
+    core.setOutput('release_id', String(result.releaseId));
+    core.setOutput('release_url', result.releaseUrl);
+    core.info(`Created tag and release: ${tagName} (${result.releaseUrl})`);
+}
+async function run() {
+    const mode = core.getInput('mode', { required: true });
+    if (mode === 'compute') {
+        await runCompute();
+    }
+    else if (mode === 'release') {
+        await runRelease();
+    }
+    else {
+        throw new Error(`Invalid "mode" input: "${mode}". Must be "compute" or "release".`);
+    }
+}
+run().catch((err) => {
+    core.setFailed(err instanceof Error ? err.message : String(err));
+});
+
+
+/***/ }),
+
 /***/ 7729:
 /***/ ((__unused_webpack_module, exports) => {
 
@@ -37373,6 +37421,102 @@ function resolvePostfix(branchName, config) {
         }
     }
     return config.default_postfix;
+}
+
+
+/***/ }),
+
+/***/ 4202:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.ReleaseError = void 0;
+exports.createTagAndRelease = createTagAndRelease;
+class ReleaseError extends Error {
+}
+exports.ReleaseError = ReleaseError;
+async function tagRefExists(octokit, owner, repo, tagName) {
+    try {
+        await octokit.rest.git.getRef({ owner, repo, ref: `tags/${tagName}` });
+        return true;
+    }
+    catch (err) {
+        const status = err.status;
+        if (status === 404)
+            return false;
+        throw err;
+    }
+}
+async function createTagAndRelease(octokit, params) {
+    const { owner, repo, tagName, sha, version, prerelease, body } = params;
+    if (await tagRefExists(octokit, owner, repo, tagName)) {
+        throw new ReleaseError(`Tag "${tagName}" already exists. semantic-ops will not overwrite an existing tag -- ` +
+            'this usually means no new bump-worthy commits have landed since the last release on this channel.');
+    }
+    const tagObject = await octokit.rest.git.createTag({
+        owner,
+        repo,
+        tag: tagName,
+        message: tagName,
+        object: sha,
+        type: 'commit',
+    });
+    await octokit.rest.git.createRef({
+        owner,
+        repo,
+        ref: `refs/tags/${tagName}`,
+        sha: tagObject.data.sha,
+    });
+    const release = await octokit.rest.repos.createRelease({
+        owner,
+        repo,
+        tag_name: tagName,
+        target_commitish: sha,
+        name: version,
+        prerelease,
+        ...(body ? { body } : { generate_release_notes: true }),
+    });
+    return { releaseId: release.data.id, releaseUrl: release.data.html_url };
+}
+
+
+/***/ }),
+
+/***/ 8721:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.buildReleaseBody = buildReleaseBody;
+/**
+ * Builds a release body that explains why this version was chosen, using the
+ * exact commit messages semantic-ops scanned to resolve bump_type -- more
+ * specific than GitHub's generic auto-generated release notes, which just
+ * summarize merged PRs/commits without any bump rationale.
+ */
+function buildReleaseBody(params) {
+    const { bumpType, postfix, previousVersion, commitMessages } = params;
+    const lines = [
+        `**Bump type:** ${bumpType}`,
+        `**Channel:** ${postfix || 'production (no postfix)'}`,
+    ];
+    if (previousVersion) {
+        lines.push(`**Previous version:** ${previousVersion}`);
+    }
+    lines.push('');
+    if (commitMessages.length > 0) {
+        lines.push('**Commits included in this release:**');
+        for (const message of commitMessages) {
+            lines.push(`- ${message}`);
+        }
+    }
+    else {
+        lines.push('_No commits since the previous release on this channel._');
+    }
+    return lines.join('\n');
 }
 
 
@@ -43814,7 +43958,7 @@ exports.NEVER = parseUtil_js_1.INVALID;
 /******/ 	// startup
 /******/ 	// Load entry module and return exports
 /******/ 	// This entry module is referenced by other modules so it can't be inlined
-/******/ 	var __webpack_exports__ = __nccwpck_require__(629);
+/******/ 	var __webpack_exports__ = __nccwpck_require__(9407);
 /******/ 	module.exports = __webpack_exports__;
 /******/ 	
 /******/ })()

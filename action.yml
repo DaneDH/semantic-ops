@@ -1,0 +1,80 @@
+name: 'Semantic Ops'
+description: 'Computes the next semantic version from the latest tag/release for the resolved branch channel, and creates the git tag + GitHub Release for a previously computed version. Choose mode: compute or release.'
+author: 'semantic-ops'
+
+branding:
+  icon: 'trending-up'
+  color: 'blue'
+
+inputs:
+  mode:
+    description: 'Which operation to run: "compute" (resolve the next version, no repo changes) or "release" (create the git tag + GitHub Release for an already-computed version).'
+    required: true
+  config_path:
+    description: '[compute mode] Path to the semantic-ops YAML config file, relative to the repo root.'
+    required: false
+    default: 'semantic-ops.yml'
+  tag_name:
+    description: '[release mode] Exact tag name to create, e.g. this action''s own "tag_name" output from a prior compute step.'
+    required: false
+    default: ''
+  sha:
+    description: '[release mode] Commit SHA to tag, e.g. github.sha.'
+    required: false
+    default: ''
+  version:
+    description: '[release mode] Version string used as the Release title, e.g. this action''s own "version" output from a prior compute step.'
+    required: false
+    default: ''
+  prerelease:
+    description: '[release mode] Whether to mark the GitHub Release as a prerelease, e.g. derived from this action''s own "postfix" output being non-empty.'
+    required: false
+    default: 'false'
+  bump_type:
+    description: '[release mode, optional] Resolved bump type, e.g. this action''s own "bump_type" output from a prior compute step. When provided, the release body is built from bump_type/postfix/previous_version/commit_messages instead of GitHub''s auto-generated notes.'
+    required: false
+    default: ''
+  postfix:
+    description: '[release mode, optional] Resolved postfix/channel. Only used to build the release body when bump_type is set.'
+    required: false
+    default: ''
+  previous_version:
+    description: '[release mode, optional] Baseline version bumped from. Only used to build the release body when bump_type is set.'
+    required: false
+    default: ''
+  commit_messages:
+    description: '[release mode, optional] Newline-separated commit messages included in this release. Only used to build the release body when bump_type is set.'
+    required: false
+    default: ''
+  github_token:
+    description: '[release mode] Token used to create the tag and GitHub Release. Requires contents:write permission. Defaults to the token GitHub Actions automatically injects into every workflow run -- no manual token creation needed.'
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  version:
+    description: '[compute mode] Computed next version (e.g. 1.33.0-alpha or 2.12.29), without tag_prefix.'
+  previous_version:
+    description: '[compute mode] Baseline version that was bumped from, within the same postfix channel.'
+  bump_type:
+    description: '[compute mode] Resolved bump type: major, minor, or patch.'
+  postfix:
+    description: '[compute mode] Resolved postfix/prerelease label (e.g. alpha, beta), or empty string if none.'
+  build_number:
+    description: '[compute mode] Build number in the form ${run_number}.${short_sha} e.g. 102.8edwfac'
+  run_id:
+    description: '[compute mode] The GitHub Actions run ID.'
+  sha:
+    description: '[compute mode] Full commit SHA that was versioned.'
+  tag_name:
+    description: '[compute mode] The exact tag name (tag_prefix + version) to pass to a later release-mode step.'
+  commit_messages:
+    description: '[compute mode] Newline-separated subject lines of every commit since the baseline tag on this channel -- pass through to a later release-mode step to build a release body.'
+  release_id:
+    description: '[release mode] The numeric ID of the created GitHub Release.'
+  release_url:
+    description: '[release mode] The HTML URL of the created GitHub Release.'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
