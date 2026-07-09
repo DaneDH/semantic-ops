@@ -1,5 +1,5 @@
-name: 'Semantic Ops'
-description: 'Computes the next semantic version from the latest tag/release for the resolved branch channel, and creates the git tag + GitHub Release for a previously computed version. Choose mode: compute or release.'
+name: 'Semantic Operations'
+description: 'Compute the next semantic version from the latest tag/release, then create the git tag and GitHub Release.'
 author: 'semantic-ops'
 
 branding:
