@@ -10,6 +10,22 @@ import { buildOutputs } from './outputs';
 import { createTagAndRelease } from './release';
 import { buildReleaseBody } from './releaseNotes';
 
+/**
+ * Resolves whether to create a GitHub Release: an explicit "true"/"false"
+ * on the create_release input always wins (lets one job override the
+ * config for a single run); an unset input falls back to the config
+ * file's create_release field, which is the normal way to control this.
+ * There is no default value for the input itself, specifically so "unset"
+ * can be told apart from "explicitly false" here.
+ */
+export function resolveCreateRelease(rawInput: string, configValue: boolean): boolean {
+  const trimmed = rawInput.trim().toLowerCase();
+  if (trimmed === '') return configValue;
+  if (trimmed === 'true') return true;
+  if (trimmed === 'false') return false;
+  throw new Error(`Invalid "create_release" input: "${rawInput}". Must be "true" or "false" (or left unset).`);
+}
+
 async function runCompute(): Promise<void> {
   const configPath = core.getInput('config_path') || 'semantic-ops.yml';
 
@@ -50,11 +66,14 @@ async function runCompute(): Promise<void> {
 }
 
 async function runRelease(): Promise<void> {
+  const configPath = core.getInput('config_path') || 'semantic-ops.yml';
+  const config = loadConfig(configPath);
+
   const tagName = core.getInput('tag_name', { required: true });
   const sha = core.getInput('sha', { required: true });
   const version = core.getInput('version', { required: true });
   const prerelease = core.getBooleanInput('prerelease');
-  const createRelease = core.getBooleanInput('create_release');
+  const createRelease = resolveCreateRelease(core.getInput('create_release'), config.create_release);
   const token = core.getInput('github_token', { required: true });
 
   const bumpType = core.getInput('bump_type');

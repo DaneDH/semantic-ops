@@ -37295,6 +37295,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.resolveCreateRelease = resolveCreateRelease;
 const core = __importStar(__nccwpck_require__(7484));
 const config_1 = __nccwpck_require__(2973);
 const postfix_1 = __nccwpck_require__(1718);
@@ -37306,6 +37307,24 @@ const github_1 = __nccwpck_require__(9248);
 const outputs_1 = __nccwpck_require__(7729);
 const release_1 = __nccwpck_require__(4202);
 const releaseNotes_1 = __nccwpck_require__(8721);
+/**
+ * Resolves whether to create a GitHub Release: an explicit "true"/"false"
+ * on the create_release input always wins (lets one job override the
+ * config for a single run); an unset input falls back to the config
+ * file's create_release field, which is the normal way to control this.
+ * There is no default value for the input itself, specifically so "unset"
+ * can be told apart from "explicitly false" here.
+ */
+function resolveCreateRelease(rawInput, configValue) {
+    const trimmed = rawInput.trim().toLowerCase();
+    if (trimmed === '')
+        return configValue;
+    if (trimmed === 'true')
+        return true;
+    if (trimmed === 'false')
+        return false;
+    throw new Error(`Invalid "create_release" input: "${rawInput}". Must be "true" or "false" (or left unset).`);
+}
 async function runCompute() {
     const configPath = core.getInput('config_path') || 'semantic-ops.yml';
     const config = (0, config_1.loadConfig)(configPath);
@@ -37337,11 +37356,13 @@ async function runCompute() {
     core.info(`Computed version: ${outputs.version} (build ${outputs.build_number}, tag ${outputs.tag_name})`);
 }
 async function runRelease() {
+    const configPath = core.getInput('config_path') || 'semantic-ops.yml';
+    const config = (0, config_1.loadConfig)(configPath);
     const tagName = core.getInput('tag_name', { required: true });
     const sha = core.getInput('sha', { required: true });
     const version = core.getInput('version', { required: true });
     const prerelease = core.getBooleanInput('prerelease');
-    const createRelease = core.getBooleanInput('create_release');
+    const createRelease = resolveCreateRelease(core.getInput('create_release'), config.create_release);
     const token = core.getInput('github_token', { required: true });
     const bumpType = core.getInput('bump_type');
     const postfix = core.getInput('postfix');

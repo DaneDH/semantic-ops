@@ -64,7 +64,6 @@ jobs:
       postfix: ${{ steps.version.outputs.postfix }}
       previous_version: ${{ steps.version.outputs.previous_version }}
       commit_messages: ${{ steps.version.outputs.commit_messages }}
-      create_release: ${{ steps.version.outputs.create_release }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -95,4 +94,7 @@ jobs:
           postfix: ${{ needs.version.outputs.postfix }}
           previous_version: ${{ needs.version.outputs.previous_version }}
           commit_messages: ${{ needs.version.outputs.commit_messages }}
-          create_release: ${{ needs.version.outputs.create_release }}
+          # create_release is intentionally NOT passed here -- release mode
+          # reads it directly from semantic-ops.yml (config's create_release
+          # field), so it can't be silently ignored if this step forgot to
+          # wire it through.

@@ -11,7 +11,7 @@ inputs:
     description: 'Which operation to run: "compute" (resolve the next version, no repo changes) or "release" (create the git tag + GitHub Release for an already-computed version).'
     required: true
   config_path:
-    description: '[compute mode] Path to the semantic-ops YAML config file, relative to the repo root.'
+    description: 'Path to the semantic-ops YAML config file, relative to the repo root. Used in compute mode for all version-resolution rules, and in release mode to read the config''s create_release field (the single source of truth for whether a GitHub Release is created -- not a separately-wired input).'
     required: false
     default: 'semantic-ops.yml'
   tag_name:
@@ -31,9 +31,8 @@ inputs:
     required: false
     default: 'false'
   create_release:
-    description: '[release mode] Whether to create a GitHub Release alongside the tag, e.g. this action''s own "create_release" output from a prior compute step (sourced from config''s create_release field). Set to false to tag only -- e.g. to leave a tag available for manually creating a Release and publishing it to the GitHub Marketplace, which is not possible once a tag already has an automated Release attached.'
+    description: '[release mode, optional] Whether to create a GitHub Release alongside the tag. Leave unset to use the config file''s create_release field (semantic-ops.yml, via config_path) -- this is the normal way to control it. Set explicitly to "true" or "false" here to override the config file for this one job/run. There is intentionally no default value, so an unset input is distinguishable from an explicit false.'
     required: false
-    default: 'true'
   bump_type:
     description: '[release mode, optional] Resolved bump type, e.g. this action''s own "bump_type" output from a prior compute step. When provided, the release body is built from bump_type/postfix/previous_version/commit_messages instead of GitHub''s auto-generated notes.'
     required: false
@@ -75,7 +74,7 @@ outputs:
   commit_messages:
     description: '[compute mode] Newline-separated subject lines of every commit since the baseline tag on this channel -- pass through to a later release-mode step to build a release body.'
   create_release:
-    description: '[compute mode] Config''s create_release field ("true"/"false") -- pass through to a later release-mode step''s create_release input.'
+    description: '[compute mode] Config''s create_release field ("true"/"false"), for informational use in your own workflow conditions (e.g. skip a "notify about new release" step). release mode reads this directly from the config file itself, so this output does not need to be passed to it.'
   release_id:
     description: '[release mode] The numeric ID of the created GitHub Release. Empty if create_release was false.'
   release_url:
