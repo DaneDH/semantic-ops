@@ -40,6 +40,7 @@ async function runCompute(): Promise<void> {
     runNumber,
     tagPrefix: config.tag_prefix,
     commitMessages,
+    createRelease: config.create_release,
   });
 
   for (const [key, value] of Object.entries(outputs)) {
@@ -53,6 +54,7 @@ async function runRelease(): Promise<void> {
   const sha = core.getInput('sha', { required: true });
   const version = core.getInput('version', { required: true });
   const prerelease = core.getBooleanInput('prerelease');
+  const createRelease = core.getBooleanInput('create_release');
   const token = core.getInput('github_token', { required: true });
 
   const bumpType = core.getInput('bump_type');
@@ -81,11 +83,16 @@ async function runRelease(): Promise<void> {
     version,
     prerelease,
     body,
+    createRelease,
   });
 
-  core.setOutput('release_id', String(result.releaseId));
-  core.setOutput('release_url', result.releaseUrl);
-  core.info(`Created tag and release: ${tagName} (${result.releaseUrl})`);
+  core.setOutput('release_id', result.releaseId !== null ? String(result.releaseId) : '');
+  core.setOutput('release_url', result.releaseUrl ?? '');
+  core.info(
+    result.releaseUrl
+      ? `Created tag and release: ${tagName} (${result.releaseUrl})`
+      : `Created tag ${tagName} only (create_release was false; no GitHub Release created)`,
+  );
 }
 
 async function run(): Promise<void> {

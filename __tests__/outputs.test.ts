@@ -20,6 +20,7 @@ describe('buildOutputs', () => {
       runNumber: 102,
       tagPrefix: 'v',
       commitMessages: ['feat: add thing', 'fix: bug'],
+      createRelease: true,
     });
 
     expect(outputs).toEqual({
@@ -32,7 +33,24 @@ describe('buildOutputs', () => {
       sha: '8edwfac2abcdef1234567890',
       tag_name: 'v1.33.0-alpha',
       commit_messages: `feat: add thing${COMMIT_MESSAGE_SEPARATOR}fix: bug`,
+      create_release: 'true',
     });
+  });
+
+  it('serializes create_release: false', () => {
+    const outputs = buildOutputs({
+      version: '1.0.0',
+      previousVersion: '',
+      bumpType: 'patch',
+      postfix: '',
+      sha: 'abc1234567890',
+      runId: 1,
+      runNumber: 1,
+      tagPrefix: 'v',
+      commitMessages: [],
+      createRelease: false,
+    });
+    expect(outputs.create_release).toBe('false');
   });
 
   it('preserves embedded newlines within a single multi-line commit message', () => {
@@ -46,6 +64,7 @@ describe('buildOutputs', () => {
       runNumber: 1,
       tagPrefix: 'v',
       commitMessages: ['feat: add thing\n\nWith a body line.', 'fix: bug'],
+      createRelease: true,
     });
     expect(outputs.commit_messages).toBe(
       `feat: add thing\n\nWith a body line.${COMMIT_MESSAGE_SEPARATOR}fix: bug`,
@@ -67,6 +86,7 @@ describe('buildOutputs', () => {
       runNumber: 1,
       tagPrefix: '',
       commitMessages: [],
+      createRelease: true,
     });
     expect(outputs.tag_name).toBe('2.12.29');
     expect(outputs.commit_messages).toBe('');

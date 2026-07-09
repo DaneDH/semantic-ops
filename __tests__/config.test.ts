@@ -10,6 +10,7 @@ describe('parseConfig', () => {
     expect(cfg.precedence).toBe('commit-first');
     expect(cfg.default_postfix).toBe('');
     expect(cfg.initial_version).toBe('1.0.0');
+    expect(cfg.create_release).toBe(true);
     expect(cfg.branch_rules).toEqual({ major: [], minor: [], patch: [] });
     expect(cfg.commit_rules).toEqual({ major: [], minor: [], patch: [] });
     expect(cfg.branch_postfix_rules).toEqual([]);
@@ -55,5 +56,10 @@ describe('parseConfig', () => {
     expect(() => parseConfig({ initial_version: '1.0.0-alpha' })).toThrow(
       /no prerelease/,
     );
+  });
+
+  it('accepts an explicit create_release: false', () => {
+    const cfg = parseConfig({ create_release: false });
+    expect(cfg.create_release).toBe(false);
   });
 });

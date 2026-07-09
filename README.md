@@ -98,6 +98,7 @@ jobs:
 | `sha` | `release` (required) | — | Commit SHA to tag. |
 | `version` | `release` (required) | — | Used as the Release title, e.g. a prior `compute` step's `version` output. |
 | `prerelease` | `release` (required) | `false` | Whether to mark the Release as a prerelease, e.g. derived from `compute`'s `postfix` output being non-empty. |
+| `create_release` | `release` | `true` | Whether to create a GitHub Release alongside the tag, e.g. a prior `compute` step's `create_release` output (sourced from config's `create_release` field). Set `false` to tag only — see [Tag-only mode](#tag-only-mode-create_release-false) below. |
 | `bump_type` | `release`, optional | `''` | A prior `compute` step's `bump_type` output. When set, triggers the custom release body described below. |
 | `postfix` | `release`, optional | `''` | A prior `compute` step's `postfix` output. Used in the custom release body. |
 | `previous_version` | `release`, optional | `''` | A prior `compute` step's `previous_version` output. Used in the custom release body. |
@@ -117,10 +118,15 @@ jobs:
 | `sha` | `compute` | `8edwfac2...` | Full commit SHA. |
 | `tag_name` | `compute` | `v1.33.0-alpha` | `tag_prefix` + `version` — the exact tag a later `release`-mode step should create. |
 | `commit_messages` | `compute` | `feat: add thing\nfix: bug` | Newline-separated subject lines of every commit since the baseline tag on this channel. Pass through to a `release`-mode step to build a descriptive release body. |
-| `release_id` | `release` | `123456789` | Numeric ID of the created GitHub Release. |
-| `release_url` | `release` | `https://github.com/org/repo/releases/tag/v1.33.0-alpha` | HTML URL of the created Release. |
+| `create_release` | `compute` | `true` | Config's `create_release` field (`"true"`/`"false"`) — pass through to a later `release`-mode step's `create_release` input. |
+| `release_id` | `release` | `123456789` | Numeric ID of the created GitHub Release. Empty if `create_release` was `false`. |
+| `release_url` | `release` | `https://github.com/org/repo/releases/tag/v1.33.0-alpha` | HTML URL of the created Release. Empty if `create_release` was `false`. |
 
-`mode: release` fails loudly if the tag already exists, rather than overwriting it. If `bump_type` is provided, the Release body is built from `bump_type`/`postfix`/`previous_version`/`commit_messages` — listing the bump rationale and the exact commits that were scanned to produce it, which is more specific than GitHub's generic auto-generated notes. If `bump_type` is omitted, the Release falls back to `generate_release_notes: true`.
+`mode: release` fails loudly if the tag already exists, rather than overwriting it. If `bump_type` is provided, the Release body is built from `bump_type`/`postfix`/`previous_version`/`commit_messages` — listing the bump rationale and the exact commits that were scanned to produce it, which is more specific than GitHub's generic auto-generated notes. If `bump_type` is omitted, the Release falls back to `generate_release_notes: true`. Either way, that same content also becomes the annotated tag's own message, so `git show <tag>` and GitHub's Tags page show real content even when no Release exists yet.
+
+### Tag-only mode (`create_release: false`)
+
+Set `create_release: false` in `semantic-ops.yml` (or pass `create_release: 'false'` directly to a `release`-mode step) to have the pipeline create the git tag on every qualifying push, without also creating a GitHub Release. This solves a real GitHub Marketplace limitation: publishing to Marketplace requires manually creating a Release and checking "Publish this Action to the GitHub Marketplace" — but that checkbox isn't available for a tag that already has an automated Release attached, and GitHub rejects "tag name has already been taken" if you try. With `create_release: false`, the tag exists but stays un-released, so you can create the Release for it by hand whenever you're ready to publish.
 
 ## Configuration (`semantic-ops.yml`)
 
@@ -131,6 +137,7 @@ default_bump: patch          # used when neither branch_rules nor commit_rules m
 precedence: commit-first     # branch-first | commit-first — tiebreaker when signals differ
 default_postfix: ""          # fallback postfix for branches matching neither main_branch nor any postfix rule
 initial_version: "1.0.0"     # first release on a channel with no prior tag -- used as-is, no bump applied
+create_release: true         # false = tag only, no GitHub Release (see "Tag-only mode" below)
 
 branch_rules:                  # bump signal from branch name — patterns grouped by level, highest matching level wins
   major:

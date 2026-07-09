@@ -30,6 +30,10 @@ inputs:
     description: '[release mode] Whether to mark the GitHub Release as a prerelease, e.g. derived from this action''s own "postfix" output being non-empty.'
     required: false
     default: 'false'
+  create_release:
+    description: '[release mode] Whether to create a GitHub Release alongside the tag, e.g. this action''s own "create_release" output from a prior compute step (sourced from config''s create_release field). Set to false to tag only -- e.g. to leave a tag available for manually creating a Release and publishing it to the GitHub Marketplace, which is not possible once a tag already has an automated Release attached.'
+    required: false
+    default: 'true'
   bump_type:
     description: '[release mode, optional] Resolved bump type, e.g. this action''s own "bump_type" output from a prior compute step. When provided, the release body is built from bump_type/postfix/previous_version/commit_messages instead of GitHub''s auto-generated notes.'
     required: false
@@ -70,10 +74,12 @@ outputs:
     description: '[compute mode] The exact tag name (tag_prefix + version) to pass to a later release-mode step.'
   commit_messages:
     description: '[compute mode] Newline-separated subject lines of every commit since the baseline tag on this channel -- pass through to a later release-mode step to build a release body.'
+  create_release:
+    description: '[compute mode] Config''s create_release field ("true"/"false") -- pass through to a later release-mode step''s create_release input.'
   release_id:
-    description: '[release mode] The numeric ID of the created GitHub Release.'
+    description: '[release mode] The numeric ID of the created GitHub Release. Empty if create_release was false.'
   release_url:
-    description: '[release mode] The HTML URL of the created GitHub Release.'
+    description: '[release mode] The HTML URL of the created GitHub Release. Empty if create_release was false.'
 
 runs:
   using: 'node20'

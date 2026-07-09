@@ -52,6 +52,7 @@ export const ConfigSchema = z.object({
   precedence: z.enum(['branch-first', 'commit-first']).default('commit-first'),
   default_postfix: z.string().default(''),
   initial_version: initialVersion,
+  create_release: z.boolean().default(true),
   branch_rules: BumpRuleSet.default({}),
   commit_rules: BumpRuleSet.default({}),
   branch_postfix_rules: z.array(PostfixRule).default([]),

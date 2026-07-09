@@ -37100,6 +37100,7 @@ exports.ConfigSchema = zod_1.z.object({
     precedence: zod_1.z.enum(['branch-first', 'commit-first']).default('commit-first'),
     default_postfix: zod_1.z.string().default(''),
     initial_version: initialVersion,
+    create_release: zod_1.z.boolean().default(true),
     branch_rules: BumpRuleSet.default({}),
     commit_rules: BumpRuleSet.default({}),
     branch_postfix_rules: zod_1.z.array(PostfixRule).default([]),
@@ -37328,6 +37329,7 @@ async function runCompute() {
         runNumber,
         tagPrefix: config.tag_prefix,
         commitMessages,
+        createRelease: config.create_release,
     });
     for (const [key, value] of Object.entries(outputs)) {
         core.setOutput(key, value);
@@ -37339,6 +37341,7 @@ async function runRelease() {
     const sha = core.getInput('sha', { required: true });
     const version = core.getInput('version', { required: true });
     const prerelease = core.getBooleanInput('prerelease');
+    const createRelease = core.getBooleanInput('create_release');
     const token = core.getInput('github_token', { required: true });
     const bumpType = core.getInput('bump_type');
     const postfix = core.getInput('postfix');
@@ -37363,10 +37366,13 @@ async function runRelease() {
         version,
         prerelease,
         body,
+        createRelease,
     });
-    core.setOutput('release_id', String(result.releaseId));
-    core.setOutput('release_url', result.releaseUrl);
-    core.info(`Created tag and release: ${tagName} (${result.releaseUrl})`);
+    core.setOutput('release_id', result.releaseId !== null ? String(result.releaseId) : '');
+    core.setOutput('release_url', result.releaseUrl ?? '');
+    core.info(result.releaseUrl
+        ? `Created tag and release: ${tagName} (${result.releaseUrl})`
+        : `Created tag ${tagName} only (create_release was false; no GitHub Release created)`);
 }
 async function run() {
     const mode = core.getInput('mode', { required: true });
@@ -37411,6 +37417,7 @@ function buildOutputs(params) {
         sha: params.sha,
         tag_name: `${params.tagPrefix}${params.version}`,
         commit_messages: params.commitMessages.join(commits_1.COMMIT_MESSAGE_SEPARATOR),
+        create_release: String(params.createRelease),
     };
 }
 
@@ -37467,7 +37474,7 @@ async function tagRefExists(octokit, owner, repo, tagName) {
     }
 }
 async function createTagAndRelease(octokit, params) {
-    const { owner, repo, tagName, sha, version, prerelease, body } = params;
+    const { owner, repo, tagName, sha, version, prerelease, body, createRelease = true } = params;
     if (await tagRefExists(octokit, owner, repo, tagName)) {
         throw new ReleaseError(`Tag "${tagName}" already exists. semantic-ops will not overwrite an existing tag -- ` +
             'this usually means no new bump-worthy commits have landed since the last release on this channel.');
@@ -37476,7 +37483,11 @@ async function createTagAndRelease(octokit, params) {
         owner,
         repo,
         tag: tagName,
-        message: tagName,
+        // The annotated tag's own message carries the real release notes (falls
+        // back to the tag name when none were computed), so `git show <tag>` or
+        // GitHub's Tags page shows real content even if createRelease is false
+        // and no Release description exists yet.
+        message: body || tagName,
         object: sha,
         type: 'commit',
     });
@@ -37486,6 +37497,9 @@ async function createTagAndRelease(octokit, params) {
         ref: `refs/tags/${tagName}`,
         sha: tagObject.data.sha,
     });
+    if (!createRelease) {
+        return { releaseId: null, releaseUrl: null };
+    }
     const release = await octokit.rest.repos.createRelease({
         owner,
         repo,

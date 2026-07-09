@@ -13,6 +13,7 @@ export interface SemanticOpsOutputs {
   sha: string;
   tag_name: string;
   commit_messages: string;
+  create_release: string;
 }
 
 export function shortSha(sha: string, length = SHORT_SHA_LENGTH): string {
@@ -29,6 +30,7 @@ export function buildOutputs(params: {
   runNumber: number;
   tagPrefix: string;
   commitMessages: string[];
+  createRelease: boolean;
 }): SemanticOpsOutputs {
   return {
     version: params.version,
@@ -40,5 +42,6 @@ export function buildOutputs(params: {
     sha: params.sha,
     tag_name: `${params.tagPrefix}${params.version}`,
     commit_messages: params.commitMessages.join(COMMIT_MESSAGE_SEPARATOR),
+    create_release: String(params.createRelease),
   };
 }
