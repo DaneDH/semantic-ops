@@ -11,6 +11,12 @@ Calling it twice like this means you can compute the version once and use it thr
 
 Versions are organized into **channels** by an optional postfix/prerelease label (e.g. `alpha`, `beta`). The postfix is resolved *only* from the branch name. Bumping (major/minor/patch) is resolved from the branch name and/or commit messages, with your choice of which one wins on conflict.
 
+### Tag-as-source-of-truth: the Semantic Ops way
+
+Most semantic versioning tools reconstruct the next version by parsing your entire commit history against a strict message format (Conventional Commits, etc.) — which means every contributor has to get the format right, squash-merges can eat the signal, and a single mis-typed commit can silently produce the wrong bump. Semantic Ops takes a different, simpler stance: **the last tag is the source of truth.** The next version is always "the latest tag on this channel, bumped" — not a full replay of history. Commit messages are an optional signal you can lean on if you want, but branch naming alone is enough to drive the entire system if you'd rather not think about commit hygiene at all.
+
+This also means version channels (production, `alpha`, `beta`, or anything else you name) are independent, honest histories rather than one contorted timeline — a channel's tag always reflects exactly what happened on that channel, nothing more.
+
 ## How it works
 
 1. **Resolve the postfix channel** for the current branch:

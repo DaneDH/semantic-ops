@@ -15,6 +15,8 @@ branch_rules:
   patch:
     - '^hotfix/'
     - '^bugfix/'
+    - '^patch/'
+    - '^doc/'
 
 commit_rules:
   major:
@@ -25,9 +27,17 @@ commit_rules:
     - '^feature/'
   patch:
     - '^fix(\(.+\))?:'
+    - '^doc(\(.+\))?:'
+    - '^patch(\(.+\))?:'
 
 branch_postfix_rules:
   - pattern: '^alpha/|/alpha$'
     postfix: alpha
   - pattern: '^beta/|/beta$'
+    postfix: beta
+  - pattern: '^feature/|/feature$'
+    postfix: beta
+  - pattern: '^patch/|/patch$'
+    postfix: beta
+  - pattern: '^fix/|/fix$'
     postfix: beta
