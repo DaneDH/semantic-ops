@@ -35,15 +35,26 @@ async function runCompute(): Promise<void> {
   const runContext = resolveRunContext();
   const { sha, runId, runNumber } = runContext;
 
-  // If this commit was introduced by a pull request, prefer its real head
-  // branch name and full original commit list over local git -- this is
-  // what makes branch_rules/commit_rules work correctly after a PR merges
-  // into main, regardless of merge strategy (merge commit, squash, or
-  // rebase all lose this information locally in different ways; GitHub's
-  // own PR<->commit tracking doesn't). Gracefully falls back to today's
-  // local-git resolution if no token is available, no PR is associated
-  // with this commit, or the lookup fails for any reason.
-  let branchName = runContext.branchName;
+  // Postfix/channel is about WHERE this commit lands (the real, current
+  // branch) -- it must never be affected by PR inheritance below. A PR
+  // from "feature/thing" merging into "main" is still a production
+  // release with no postfix, even if "feature/thing" would itself match a
+  // branch_postfix_rules pattern.
+  const currentBranch = runContext.branchName;
+  const postfix = resolvePostfix(currentBranch, config);
+  core.info(`Resolved branch "${currentBranch}" -> postfix channel "${postfix || '(none)'}"`);
+
+  // bump_type/commit_rules, by contrast, are about WHAT changed -- so they
+  // benefit from PR inheritance: if this commit was introduced by a pull
+  // request, prefer its real head branch name and full original commit
+  // list over local git for THIS resolution only. This is what makes
+  // branch_rules/commit_rules work correctly after a PR merges into main,
+  // regardless of merge strategy (merge commit, squash, or rebase all lose
+  // this information locally in different ways; GitHub's own PR<->commit
+  // tracking doesn't). Gracefully falls back to today's local-git
+  // resolution if no token is available, no PR is associated with this
+  // commit, or the lookup fails for any reason.
+  let bumpBranch = currentBranch;
   let prCommitMessages: string[] | null = null;
 
   const token = core.getInput('github_token');
@@ -53,9 +64,11 @@ async function runCompute(): Promise<void> {
       const { owner, repo } = repoInfo();
       const prContext = await findMergedPullRequestContext(octokit, owner, repo, sha);
       if (prContext) {
-        branchName = prContext.branchName;
+        bumpBranch = prContext.branchName;
         prCommitMessages = prContext.commitMessages;
-        core.info(`Resolved branch and commits from the pull request that introduced this commit: "${branchName}"`);
+        core.info(
+          `Resolved bump-type branch and commits from the pull request that introduced this commit: "${bumpBranch}"`,
+        );
       }
     } catch (err) {
       core.warning(
@@ -66,9 +79,6 @@ async function runCompute(): Promise<void> {
     }
   }
 
-  const postfix = resolvePostfix(branchName, config);
-  core.info(`Resolved branch "${branchName}" -> postfix channel "${postfix || '(none)'}"`);
-
   const tags = await listTags();
   const baseline = findBaselineTag(tags, postfix, config.tag_prefix);
   core.info(
@@ -77,7 +87,7 @@ async function runCompute(): Promise<void> {
 
   const commitMessages =
     prCommitMessages ?? (await getCommitMessagesSince(baseline ? `${config.tag_prefix}${baseline.raw}` : null));
-  const bumpType = resolveBump(branchName, commitMessages, config);
+  const bumpType = resolveBump(bumpBranch, commitMessages, config);
   core.info(`Resolved bump type: ${bumpType}`);
 
   const version = computeNextVersion(baseline, bumpType, postfix, config.initial_version);
