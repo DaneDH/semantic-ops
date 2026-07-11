@@ -50,7 +50,7 @@ inputs:
     required: false
     default: ''
   github_token:
-    description: '[release mode] Token used to create the tag and GitHub Release. Requires contents:write permission. Defaults to the token GitHub Actions automatically injects into every workflow run -- no manual token creation needed.'
+    description: 'Used in release mode to create the tag and GitHub Release (requires contents:write permission on the job). Optionally used in compute mode, if provided, to look up the pull request that introduced the current commit (requires pull-requests:read) so branch_rules/commit_rules can be resolved against the PR''s real head branch and full original commit list -- this makes version resolution correct after a PR merges into main, regardless of merge strategy (merge commit, squash, or rebase). If omitted in compute mode, or if no pull request is found, resolution falls back to local git as before -- this is purely additive, never a hard requirement. Defaults to the token GitHub Actions automatically injects into every workflow run -- no manual token creation needed.'
     required: false
     default: ${{ github.token }}
 

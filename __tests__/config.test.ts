@@ -11,6 +11,7 @@ describe('parseConfig', () => {
     expect(cfg.default_postfix).toBe('');
     expect(cfg.initial_version).toBe('1.0.0');
     expect(cfg.create_release).toBe(true);
+    expect(cfg.release_branch_rules).toEqual([]);
     expect(cfg.branch_rules).toEqual({ major: [], minor: [], patch: [] });
     expect(cfg.commit_rules).toEqual({ major: [], minor: [], patch: [] });
     expect(cfg.branch_postfix_rules).toEqual([]);
@@ -61,5 +62,16 @@ describe('parseConfig', () => {
   it('accepts an explicit create_release: false', () => {
     const cfg = parseConfig({ create_release: false });
     expect(cfg.create_release).toBe(false);
+  });
+
+  it('accepts custom release_branch_rules', () => {
+    const cfg = parseConfig({ release_branch_rules: ['^main$', '^release/'] });
+    expect(cfg.release_branch_rules).toEqual(['^main$', '^release/']);
+  });
+
+  it('rejects an invalid regular expression in release_branch_rules', () => {
+    expect(() => parseConfig({ release_branch_rules: ['(unclosed'] })).toThrow(
+      /not a valid regular expression/,
+    );
   });
 });

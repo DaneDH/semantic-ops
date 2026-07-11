@@ -53,6 +53,11 @@ export const ConfigSchema = z.object({
   default_postfix: z.string().default(''),
   initial_version: initialVersion,
   create_release: z.boolean().default(true),
+  // Narrows *which branches* are allowed to create a Release when
+  // create_release is true. Empty (default) = no restriction, matching
+  // today's behavior. Never affects tagging, which always happens
+  // regardless of this field.
+  release_branch_rules: z.array(regexPattern).default([]),
   branch_rules: BumpRuleSet.default({}),
   commit_rules: BumpRuleSet.default({}),
   branch_postfix_rules: z.array(PostfixRule).default([]),

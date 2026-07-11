@@ -37101,6 +37101,11 @@ exports.ConfigSchema = zod_1.z.object({
     default_postfix: zod_1.z.string().default(''),
     initial_version: initialVersion,
     create_release: zod_1.z.boolean().default(true),
+    // Narrows *which branches* are allowed to create a Release when
+    // create_release is true. Empty (default) = no restriction, matching
+    // today's behavior. Never affects tagging, which always happens
+    // regardless of this field.
+    release_branch_rules: zod_1.z.array(regexPattern).default([]),
     branch_rules: BumpRuleSet.default({}),
     commit_rules: BumpRuleSet.default({}),
     branch_postfix_rules: zod_1.z.array(PostfixRule).default([]),
@@ -37307,6 +37312,8 @@ const github_1 = __nccwpck_require__(9248);
 const outputs_1 = __nccwpck_require__(7729);
 const release_1 = __nccwpck_require__(4202);
 const releaseNotes_1 = __nccwpck_require__(8721);
+const prContext_1 = __nccwpck_require__(9782);
+const releaseGate_1 = __nccwpck_require__(4149);
 /**
  * Resolves whether to create a GitHub Release: an explicit "true"/"false"
  * on the create_release input always wins (lets one job override the
@@ -37328,13 +37335,40 @@ function resolveCreateRelease(rawInput, configValue) {
 async function runCompute() {
     const configPath = core.getInput('config_path') || 'semantic-ops.yml';
     const config = (0, config_1.loadConfig)(configPath);
-    const { branchName, sha, runId, runNumber } = (0, github_1.resolveRunContext)();
+    const runContext = (0, github_1.resolveRunContext)();
+    const { sha, runId, runNumber } = runContext;
+    // If this commit was introduced by a pull request, prefer its real head
+    // branch name and full original commit list over local git -- this is
+    // what makes branch_rules/commit_rules work correctly after a PR merges
+    // into main, regardless of merge strategy (merge commit, squash, or
+    // rebase all lose this information locally in different ways; GitHub's
+    // own PR<->commit tracking doesn't). Gracefully falls back to today's
+    // local-git resolution if no token is available, no PR is associated
+    // with this commit, or the lookup fails for any reason.
+    let branchName = runContext.branchName;
+    let prCommitMessages = null;
+    const token = core.getInput('github_token');
+    if (token) {
+        try {
+            const octokit = (0, github_1.getOctokit)(token);
+            const { owner, repo } = (0, github_1.repoInfo)();
+            const prContext = await (0, prContext_1.findMergedPullRequestContext)(octokit, owner, repo, sha);
+            if (prContext) {
+                branchName = prContext.branchName;
+                prCommitMessages = prContext.commitMessages;
+                core.info(`Resolved branch and commits from the pull request that introduced this commit: "${branchName}"`);
+            }
+        }
+        catch (err) {
+            core.warning(`Could not resolve the merging pull request for this commit, falling back to local branch/commit resolution: ${err instanceof Error ? err.message : String(err)}`);
+        }
+    }
     const postfix = (0, postfix_1.resolvePostfix)(branchName, config);
     core.info(`Resolved branch "${branchName}" -> postfix channel "${postfix || '(none)'}"`);
     const tags = await (0, commits_1.listTags)();
     const baseline = (0, baseline_1.findBaselineTag)(tags, postfix, config.tag_prefix);
     core.info(`Baseline version for this channel: ${baseline ? baseline.raw : `(none, cold start from ${config.initial_version})`}`);
-    const commitMessages = await (0, commits_1.getCommitMessagesSince)(baseline ? `${config.tag_prefix}${baseline.raw}` : null);
+    const commitMessages = prCommitMessages ?? (await (0, commits_1.getCommitMessagesSince)(baseline ? `${config.tag_prefix}${baseline.raw}` : null));
     const bumpType = (0, bump_1.resolveBump)(branchName, commitMessages, config);
     core.info(`Resolved bump type: ${bumpType}`);
     const version = (0, version_1.computeNextVersion)(baseline, bumpType, postfix, config.initial_version);
@@ -37362,7 +37396,8 @@ async function runRelease() {
     const sha = core.getInput('sha', { required: true });
     const version = core.getInput('version', { required: true });
     const prerelease = core.getBooleanInput('prerelease');
-    const createRelease = resolveCreateRelease(core.getInput('create_release'), config.create_release);
+    const { branchName } = (0, github_1.resolveRunContext)();
+    const createRelease = (0, releaseGate_1.shouldCreateRelease)(branchName, resolveCreateRelease(core.getInput('create_release'), config.create_release), config.release_branch_rules);
     const token = core.getInput('github_token', { required: true });
     const bumpType = core.getInput('bump_type');
     const postfix = core.getInput('postfix');
@@ -37393,7 +37428,7 @@ async function runRelease() {
     core.setOutput('release_url', result.releaseUrl ?? '');
     core.info(result.releaseUrl
         ? `Created tag and release: ${tagName} (${result.releaseUrl})`
-        : `Created tag ${tagName} only (create_release was false; no GitHub Release created)`);
+        : `Created tag ${tagName} only (create_release is false, or branch "${branchName}" doesn't match release_branch_rules; no GitHub Release created)`);
 }
 async function run() {
     const mode = core.getInput('mode', { required: true });
@@ -37471,6 +37506,53 @@ function resolvePostfix(branchName, config) {
 
 /***/ }),
 
+/***/ 9782:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.findMergedPullRequestContext = findMergedPullRequestContext;
+/**
+ * Resolves the branch name and full original commit list from the pull
+ * request that introduced the given commit, using GitHub's own PR<->commit
+ * tracking rather than local git history. This works regardless of merge
+ * strategy (merge commit, squash, or rebase) -- unlike git branches (which
+ * are just movable refs with no memory of their origin once merged) or
+ * squashed commit messages (which discard the original per-commit messages
+ * entirely), GitHub tracks which PR produced which commit on its own,
+ * independent of git.
+ *
+ * Returns null if no pull request is associated with the commit (e.g. a
+ * direct push with no PR involved) -- callers should fall back to local
+ * git-based resolution in that case.
+ */
+async function findMergedPullRequestContext(octokit, owner, repo, sha) {
+    const { data: pulls } = await octokit.rest.repos.listPullRequestsAssociatedWithCommit({
+        owner,
+        repo,
+        commit_sha: sha,
+    });
+    if (pulls.length === 0) {
+        return null;
+    }
+    // If more than one PR is associated with this commit (rare -- e.g.
+    // cherry-picks), the first result is GitHub's own best match.
+    const pull = pulls[0];
+    const { data: commits } = await octokit.rest.pulls.listCommits({
+        owner,
+        repo,
+        pull_number: pull.number,
+    });
+    return {
+        branchName: pull.head.ref,
+        commitMessages: commits.map((commit) => commit.commit.message),
+    };
+}
+
+
+/***/ }),
+
 /***/ 4202:
 /***/ ((__unused_webpack_module, exports) => {
 
@@ -37531,6 +37613,32 @@ async function createTagAndRelease(octokit, params) {
         ...(body ? { body } : { generate_release_notes: true }),
     });
     return { releaseId: release.data.id, releaseUrl: release.data.html_url };
+}
+
+
+/***/ }),
+
+/***/ 4149:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.shouldCreateRelease = shouldCreateRelease;
+/**
+ * Decides whether release mode should actually create a GitHub Release,
+ * on top of the create_release toggle -- narrowing *which branches* are
+ * allowed to release. Never affects tagging; a tag is always created
+ * regardless of this gate. Uses the plain current branch name (not the
+ * PR-context-resolved one) -- this is intentionally a simple, coarse gate,
+ * orthogonal to the merge-strategy-agnostic bump/postfix resolution.
+ */
+function shouldCreateRelease(branchName, createRelease, releaseBranchRules) {
+    if (!createRelease)
+        return false;
+    if (releaseBranchRules.length === 0)
+        return true;
+    return releaseBranchRules.some((pattern) => new RegExp(pattern).test(branchName));
 }
 
 

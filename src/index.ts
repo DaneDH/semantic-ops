@@ -9,6 +9,8 @@ import { resolveRunContext, getOctokit, repoInfo } from './github';
 import { buildOutputs } from './outputs';
 import { createTagAndRelease } from './release';
 import { buildReleaseBody } from './releaseNotes';
+import { findMergedPullRequestContext } from './prContext';
+import { shouldCreateRelease } from './releaseGate';
 
 /**
  * Resolves whether to create a GitHub Release: an explicit "true"/"false"
@@ -30,7 +32,39 @@ async function runCompute(): Promise<void> {
   const configPath = core.getInput('config_path') || 'semantic-ops.yml';
 
   const config = loadConfig(configPath);
-  const { branchName, sha, runId, runNumber } = resolveRunContext();
+  const runContext = resolveRunContext();
+  const { sha, runId, runNumber } = runContext;
+
+  // If this commit was introduced by a pull request, prefer its real head
+  // branch name and full original commit list over local git -- this is
+  // what makes branch_rules/commit_rules work correctly after a PR merges
+  // into main, regardless of merge strategy (merge commit, squash, or
+  // rebase all lose this information locally in different ways; GitHub's
+  // own PR<->commit tracking doesn't). Gracefully falls back to today's
+  // local-git resolution if no token is available, no PR is associated
+  // with this commit, or the lookup fails for any reason.
+  let branchName = runContext.branchName;
+  let prCommitMessages: string[] | null = null;
+
+  const token = core.getInput('github_token');
+  if (token) {
+    try {
+      const octokit = getOctokit(token);
+      const { owner, repo } = repoInfo();
+      const prContext = await findMergedPullRequestContext(octokit, owner, repo, sha);
+      if (prContext) {
+        branchName = prContext.branchName;
+        prCommitMessages = prContext.commitMessages;
+        core.info(`Resolved branch and commits from the pull request that introduced this commit: "${branchName}"`);
+      }
+    } catch (err) {
+      core.warning(
+        `Could not resolve the merging pull request for this commit, falling back to local branch/commit resolution: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
 
   const postfix = resolvePostfix(branchName, config);
   core.info(`Resolved branch "${branchName}" -> postfix channel "${postfix || '(none)'}"`);
@@ -41,7 +75,8 @@ async function runCompute(): Promise<void> {
     `Baseline version for this channel: ${baseline ? baseline.raw : `(none, cold start from ${config.initial_version})`}`,
   );
 
-  const commitMessages = await getCommitMessagesSince(baseline ? `${config.tag_prefix}${baseline.raw}` : null);
+  const commitMessages =
+    prCommitMessages ?? (await getCommitMessagesSince(baseline ? `${config.tag_prefix}${baseline.raw}` : null));
   const bumpType = resolveBump(branchName, commitMessages, config);
   core.info(`Resolved bump type: ${bumpType}`);
 
@@ -73,7 +108,12 @@ async function runRelease(): Promise<void> {
   const sha = core.getInput('sha', { required: true });
   const version = core.getInput('version', { required: true });
   const prerelease = core.getBooleanInput('prerelease');
-  const createRelease = resolveCreateRelease(core.getInput('create_release'), config.create_release);
+  const { branchName } = resolveRunContext();
+  const createRelease = shouldCreateRelease(
+    branchName,
+    resolveCreateRelease(core.getInput('create_release'), config.create_release),
+    config.release_branch_rules,
+  );
   const token = core.getInput('github_token', { required: true });
 
   const bumpType = core.getInput('bump_type');
@@ -110,7 +150,7 @@ async function runRelease(): Promise<void> {
   core.info(
     result.releaseUrl
       ? `Created tag and release: ${tagName} (${result.releaseUrl})`
-      : `Created tag ${tagName} only (create_release was false; no GitHub Release created)`,
+      : `Created tag ${tagName} only (create_release is false, or branch "${branchName}" doesn't match release_branch_rules; no GitHub Release created)`,
   );
 }
 
