@@ -11,6 +11,12 @@ Calling it twice like this means you can compute the version once and use it thr
 
 Versions are organized into **channels** by an optional postfix/prerelease label (e.g. `alpha`, `beta`). The postfix is resolved *only* from the branch name. Bumping (major/minor/patch) is resolved from the branch name and/or commit messages, with your choice of which one wins on conflict.
 
+### Tag-as-source-of-truth: the Semantic Ops way
+
+Most semantic versioning tools reconstruct the next version by parsing your entire commit history against a strict message format (Conventional Commits, etc.) — which means every contributor has to get the format right, squash-merges can eat the signal, and a single mis-typed commit can silently produce the wrong bump. Semantic Ops takes a different, simpler stance: **the last tag is the source of truth.** The next version is always "the latest tag on this channel, bumped" — not a full replay of history. Commit messages are an optional signal you can lean on if you want, but branch naming alone is enough to drive the entire system if you'd rather not think about commit hygiene at all.
+
+This also means version channels (production, `alpha`, `beta`, or anything else you name) are independent, honest histories rather than one contorted timeline — a channel's tag always reflects exactly what happened on that channel, nothing more.
+
 ## How it works
 
 1. **Resolve the postfix channel** for the current branch:
@@ -25,6 +31,14 @@ Versions are organized into **channels** by an optional postfix/prerelease label
 4. **Compute the next version** by bumping the baseline's release triple and appending the postfix, if any.
 5. **`mode: compute` emits outputs**; **`mode: release`**, called separately, creates the annotated git tag + GitHub Release.
 
+### Resolving branch and commits correctly after a PR merges
+
+Once a PR merges into `main`, the current branch *is* `main` — git has no memory of the original feature branch name, and depending on merge strategy, the commit picture degrades too: squash merges collapse every original commit into one, and neither squash nor rebase preserve the branch name anywhere in git history. Left alone, this can cause `branch_rules`/`commit_rules` to silently miss the signal that was only present on the now-gone feature branch, falling back to `default_bump`.
+
+`compute` mode fixes this by asking GitHub directly: given the commit that triggered this run, it looks up the pull request that introduced it (`github_token` input, read-only `pull-requests: read` permission) and, when one is found, uses **that PR's real head branch name and full original commit list** for `branch_rules`/`branch_postfix_rules`/`commit_rules` resolution instead of the post-merge branch/squashed commit. This works identically regardless of merge strategy (merge commit, squash, or rebase), because GitHub tracks which PR introduced which commit in its own database, independent of git.
+
+This is purely additive and never a hard requirement: if no `github_token` is available, no pull request is associated with the commit (e.g. a direct push with no PR involved), or the lookup fails for any reason, `compute` mode falls back to today's local-git resolution (current branch name, `git log` since the baseline tag) exactly as before.
+
 ## Usage
 
 ```yaml
@@ -37,6 +51,9 @@ on:
 jobs:
   version:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read   # optional: lets compute mode resolve branch/commits from the merging PR
     outputs:
       tag_name: ${{ steps.version.outputs.tag_name }}
       version: ${{ steps.version.outputs.version }}
@@ -93,7 +110,7 @@ jobs:
 | Input | Used in mode | Default | Description |
 |---|---|---|---|
 | `mode` | both (required) | — | `compute` or `release`. |
-| `config_path` | both | `semantic-ops.yml` | Path to the YAML config file, relative to the repo root. `compute` uses it for all version-resolution rules; `release` uses it to read `create_release` (see [Tag-only mode](#tag-only-mode-create_release-false) below) as the default, unless overridden by the `create_release` input below. |
+| `config_path` | both | `semantic-ops.yml` | Path to the YAML config file, relative to the repo root. `compute` uses it for all version-resolution rules; `release` uses it to read `create_release` (see [Tag-only mode](#tag-only-mode-create_release-false), unless overridden by the `create_release` input below) and `release_branch_rules` (see [Branch-gated release](#branch-gated-release-release_branch_rules)). |
 | `tag_name` | `release` (required) | — | Exact tag to create, e.g. a prior `compute` step's `tag_name` output. |
 | `sha` | `release` (required) | — | Commit SHA to tag. |
 | `version` | `release` (required) | — | Used as the Release title, e.g. a prior `compute` step's `version` output. |
@@ -103,7 +120,7 @@ jobs:
 | `postfix` | `release`, optional | `''` | A prior `compute` step's `postfix` output. Used in the custom release body. |
 | `previous_version` | `release`, optional | `''` | A prior `compute` step's `previous_version` output. Used in the custom release body. |
 | `commit_messages` | `release`, optional | `''` | A prior `compute` step's `commit_messages` output. Used in the custom release body. |
-| `github_token` | `release` | `${{ github.token }}` | Token used to create the tag + release. You don't need to create anything — this defaults to the token GitHub Actions automatically injects into every workflow run. The only thing you need to add is `permissions: contents: write` on this job (see the [Usage](#usage) example), which grants that auto-token write access. Only override this input if you need tag pushes to trigger other workflows (the default token deliberately can't do that) — in which case supply your own fine-grained PAT scoped to just this repo. |
+| `github_token` | both | `${{ github.token }}` | In `release` mode: used to create the tag + release (needs `permissions: contents: write` on the job). In `compute` mode: optionally used to resolve branch/commits from the merging pull request (needs `permissions: pull-requests: read`) — see [Resolving branch and commits correctly after a PR merges](#resolving-branch-and-commits-correctly-after-a-pr-merges); safely skipped if omitted. You don't need to create anything — this defaults to the token GitHub Actions automatically injects into every workflow run. Only override this input if you need tag pushes to trigger other workflows (the default token deliberately can't do that) — in which case supply your own fine-grained PAT scoped to just this repo. |
 
 ## Outputs
 
@@ -145,6 +162,21 @@ This solves a real GitHub Marketplace limitation: publishing to Marketplace requ
 
 Leaving `create_release` unset (the normal case) always falls back to the config file — the override only takes effect when a step explicitly sets it to `'true'` or `'false'`.
 
+### Branch-gated release (`release_branch_rules`)
+
+`create_release` is a global on/off switch — but you might want some branches to only ever tag (never release) even when `create_release` is `true` overall, e.g. tag every qualifying branch for full version history, while only `main` (or `release/*`) actually produces a Release. Set `release_branch_rules` in `semantic-ops.yml` to a list of regex patterns matched against the plain current branch name:
+
+```yaml
+create_release: true
+release_branch_rules:
+  - '^main$'
+  - '^release/'
+```
+
+A Release is created only when **both** `create_release` resolves to `true` (from config or the per-job override above) **and** the current branch matches at least one pattern here. Leaving `release_branch_rules` empty (the default) means no additional restriction — identical to today's behavior. This field **never** affects tagging — a tag is always created on every qualifying push regardless of `release_branch_rules`; it only ever narrows whether a Release is *also* created.
+
+This is deliberately a simple, coarse gate: it matches against the plain current branch (e.g. `main` after a PR merges), not the PR-context-resolved branch name used for `branch_rules`/`commit_rules` (see [Resolving branch and commits correctly after a PR merges](#resolving-branch-and-commits-correctly-after-a-pr-merges) above) — those are two independent concerns.
+
 ## Configuration (`semantic-ops.yml`)
 
 ```yaml
@@ -155,6 +187,7 @@ precedence: commit-first     # branch-first | commit-first — tiebreaker when s
 default_postfix: ""          # fallback postfix for branches matching neither main_branch nor any postfix rule
 initial_version: "1.0.0"     # first release on a channel with no prior tag -- used as-is, no bump applied
 create_release: true         # false = tag only, no GitHub Release (see "Tag-only mode" below)
+release_branch_rules: []     # non-empty = only release on branches matching one of these patterns (see "Branch-gated release" below)
 
 branch_rules:                  # bump signal from branch name — patterns grouped by level, highest matching level wins
   major:

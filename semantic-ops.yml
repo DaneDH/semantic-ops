@@ -5,6 +5,8 @@ precedence: commit-first
 default_postfix: ""
 initial_version: "1.0.0"     # first release on a channel with no prior tag -- used as-is, no bump applied
 create_release: false         # false = tag only, no GitHub Release (e.g. to leave a tag free for manual Marketplace publishing)
+release_branch_rules:         # if create_release were true, only these branches would actually release (tagging is unaffected either way)
+  - '^main$'
 
 branch_rules:
   major:
@@ -15,6 +17,8 @@ branch_rules:
   patch:
     - '^hotfix/'
     - '^bugfix/'
+    - '^patch/'
+    - '^doc/'
 
 commit_rules:
   major:
@@ -25,9 +29,17 @@ commit_rules:
     - '^feature/'
   patch:
     - '^fix(\(.+\))?:'
+    - '^doc(\(.+\))?:'
+    - '^patch(\(.+\))?:'
 
 branch_postfix_rules:
   - pattern: '^alpha/|/alpha$'
     postfix: alpha
   - pattern: '^beta/|/beta$'
+    postfix: beta
+  - pattern: '^feature/|/feature$'
+    postfix: beta
+  - pattern: '^patch/|/patch$'
+    postfix: beta
+  - pattern: '^fix/|/fix$'
     postfix: beta

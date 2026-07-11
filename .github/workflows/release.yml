@@ -11,6 +11,7 @@ on:
       - main
       - 'alpha/**'
       - 'beta/**'
+      - 'feature/**'
   pull_request:
 
 permissions:
@@ -56,6 +57,9 @@ jobs:
   version:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read # lets compute mode resolve branch/commits from the merging PR, regardless of merge strategy
     outputs:
       tag_name: ${{ steps.version.outputs.tag_name }}
       version: ${{ steps.version.outputs.version }}
