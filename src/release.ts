@@ -55,7 +55,7 @@ export async function createTagAndRelease(
   if (await tagRefExists(octokit, owner, repo, tagName)) {
     throw new ReleaseError(
       `Tag "${tagName}" already exists. semantic-ops will not overwrite an existing tag -- ` +
-        'this usually means no new bump-worthy commits have landed since the last release on this channel.',
+        'this usually means no new update-worthy commits have landed since the last release on this channel.',
     );
   }
 
@@ -63,11 +63,13 @@ export async function createTagAndRelease(
     owner,
     repo,
     tag: tagName,
-    // The annotated tag's own message carries the real release notes (falls
-    // back to the tag name when none were computed), so `git show <tag>` or
-    // GitHub's Tags page shows real content even if createRelease is false
-    // and no Release description exists yet.
-    message: body || tagName,
+    // Keep this to just the tag name. GitHub falls back to showing the
+    // annotated tag's own message in place of the Release title/body on
+    // various surfaces (e.g. the repo homepage's Releases widget) whenever
+    // the Release itself has no name/body -- putting the full release
+    // notes here leaked that whole block of text into those surfaces
+    // looking cluttered, instead of a clean version number.
+    message: tagName,
     object: sha,
     type: 'commit',
   });

@@ -34,7 +34,7 @@ inputs:
     description: '[release mode, optional] Whether to create a GitHub Release alongside the tag. Leave unset to use the config file''s create_release field (semantic-ops.yml, via config_path) -- this is the normal way to control it. Set explicitly to "true" or "false" here to override the config file for this one job/run. There is intentionally no default value, so an unset input is distinguishable from an explicit false.'
     required: false
   bump_type:
-    description: '[release mode, optional] Resolved bump type, e.g. this action''s own "bump_type" output from a prior compute step. When provided, the release body is built from bump_type/postfix/previous_version/commit_messages instead of GitHub''s auto-generated notes.'
+    description: '[release mode, optional] Resolved update type (major/minor/patch), e.g. this action''s own "bump_type" output from a prior compute step. When provided, the release body is built from bump_type/postfix/previous_version/commit_messages instead of GitHub''s auto-generated notes.'
     required: false
     default: ''
   postfix:
@@ -42,7 +42,7 @@ inputs:
     required: false
     default: ''
   previous_version:
-    description: '[release mode, optional] Baseline version bumped from. Only used to build the release body when bump_type is set.'
+    description: '[release mode, optional] Baseline version updated from. Only used to build the release body when bump_type is set.'
     required: false
     default: ''
   commit_messages:
@@ -58,9 +58,9 @@ outputs:
   version:
     description: '[compute mode] Computed next version (e.g. 1.33.0-alpha or 2.12.29), without tag_prefix.'
   previous_version:
-    description: '[compute mode] Baseline version that was bumped from, within the same postfix channel.'
+    description: '[compute mode] Baseline version that was updated from, within the same postfix channel.'
   bump_type:
-    description: '[compute mode] Resolved bump type: major, minor, or patch.'
+    description: '[compute mode] Resolved update type: major, minor, or patch.'
   postfix:
     description: '[compute mode] Resolved postfix/prerelease label (e.g. alpha, beta), or empty string if none.'
   build_number:

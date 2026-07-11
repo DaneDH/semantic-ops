@@ -9,11 +9,11 @@ A single GitHub Action that computes the next semantic version **from the latest
 
 Calling it twice like this means you can compute the version once and use it throughout the pipeline (build artifacts, container tags, etc.), while only tagging the repo at the very end — after a deploy job has actually succeeded. If deploy fails, you simply never call the `release` step, and the repo is never tagged for a release that didn't happen.
 
-Versions are organized into **channels** by an optional postfix/prerelease label (e.g. `alpha`, `beta`). The postfix is resolved *only* from the branch name. Bumping (major/minor/patch) is resolved from the branch name and/or commit messages, with your choice of which one wins on conflict.
+Versions are organized into **channels** by an optional postfix/prerelease label (e.g. `alpha`, `beta`). The postfix is resolved *only* from the branch name. The update type (major/minor/patch) is resolved from the branch name and/or commit messages, with your choice of which one wins on conflict.
 
 ### Tag-as-source-of-truth: the Semantic Ops way
 
-Most semantic versioning tools reconstruct the next version by parsing your entire commit history against a strict message format (Conventional Commits, etc.) — which means every contributor has to get the format right, squash-merges can eat the signal, and a single mis-typed commit can silently produce the wrong bump. Semantic Ops takes a different, simpler stance: **the last tag is the source of truth.** The next version is always "the latest tag on this channel, bumped" — not a full replay of history. Commit messages are an optional signal you can lean on if you want, but branch naming alone is enough to drive the entire system if you'd rather not think about commit hygiene at all.
+Most semantic versioning tools reconstruct the next version by parsing your entire commit history against a strict message format (Conventional Commits, etc.) — which means every contributor has to get the format right, squash-merges can eat the signal, and a single mis-typed commit can silently produce the wrong update. Semantic Ops takes a different, simpler stance: **the last tag is the source of truth.** The next version is always "the latest tag on this channel, updated" — not a full replay of history. Commit messages are an optional signal you can lean on if you want, but branch naming alone is enough to drive the entire system if you'd rather not think about commit hygiene at all.
 
 This also means version channels (production, `alpha`, `beta`, or anything else you name) are independent, honest histories rather than one contorted timeline — a channel's tag always reflects exactly what happened on that channel, nothing more.
 
@@ -23,17 +23,17 @@ This also means version channels (production, `alpha`, `beta`, or anything else 
    - The configured `main_branch` always resolves to no postfix (production channel).
    - Otherwise, the first matching `branch_postfix_rules` entry wins.
    - Otherwise, `default_postfix` is used (defaults to `""`, i.e. treated as production).
-2. **Find the baseline version** — the latest existing tag *in that same channel*. An `alpha` release only ever bumps from the latest `-alpha` tag; a production release only ever bumps from the latest tag with no postfix at all. Different channels never mix.
-3. **Resolve the bump type** (major/minor/patch):
-   - `branch_rules` groups patterns by bump level (`major`/`minor`/`patch`, each a list). The highest-severity level with any matching pattern wins.
+2. **Find the baseline version** — the latest existing tag *in that same channel*. An `alpha` release only ever updates from the latest `-alpha` tag; a production release only ever updates from the latest tag with no postfix at all. Different channels never mix.
+3. **Resolve the update type** (major/minor/patch, the `bump_type` output):
+   - `branch_rules` groups patterns by update level (`major`/`minor`/`patch`, each a list). The highest-severity level with any matching pattern wins.
    - `commit_rules` groups patterns the same way, checked against every commit message since the baseline tag. The highest-severity level with any matching commit wins.
    - If both produce a result and they differ, `precedence` (`branch-first` or `commit-first`) decides. If only one produces a result, that one is used. If neither matches, `default_bump` is used.
-4. **Compute the next version** by bumping the baseline's release triple and appending the postfix, if any.
+4. **Compute the next version** by advancing the baseline's release triple and appending the postfix, if any.
 5. **`mode: compute` emits outputs**; **`mode: release`**, called separately, creates the annotated git tag + GitHub Release.
 
 ### Resolving branch and commits correctly after a PR merges
 
-Once a PR merges into `main`, the current branch *is* `main` — git has no memory of the original feature branch name, and depending on merge strategy, the commit picture degrades too: squash merges collapse every original commit into one, and neither squash nor rebase preserve the branch name anywhere in git history. Left alone, this can cause `branch_rules`/`commit_rules` to silently miss the signal that was only present on the now-gone feature branch, falling back to `default_bump`.
+Once a PR merges into `main`, the current branch *is* `main` — git has no memory of the original feature branch name, and depending on merge strategy, the commit picture degrades too: squash merges collapse every original commit into one, and neither squash nor rebase preserve the branch name anywhere in git history. Left alone, this can cause `branch_rules`/`commit_rules` to silently miss the signal that was only present on the now-gone feature branch, falling back to `default_bump` (the default update type).
 
 `compute` mode fixes this by asking GitHub directly: given the commit that triggered this run, it looks up the pull request that introduced it (`github_token` input, read-only `pull-requests: read` permission) and, when one is found, uses **that PR's real head branch name and full original commit list** for `branch_rules`/`branch_postfix_rules`/`commit_rules` resolution instead of the post-merge branch/squashed commit. This works identically regardless of merge strategy (merge commit, squash, or rebase), because GitHub tracks which PR introduced which commit in its own database, independent of git.
 
@@ -116,7 +116,7 @@ jobs:
 | `version` | `release` (required) | — | Used as the Release title, e.g. a prior `compute` step's `version` output. |
 | `prerelease` | `release` (required) | `false` | Whether to mark the Release as a prerelease, e.g. derived from `compute`'s `postfix` output being non-empty. |
 | `create_release` | `release`, optional | *(unset)* | `'true'` or `'false'` to override the config file's `create_release` field for this one job/run. Leave unset (the default — note there is no default *value*) to use whatever `semantic-ops.yml` says. |
-| `bump_type` | `release`, optional | `''` | A prior `compute` step's `bump_type` output. When set, triggers the custom release body described below. |
+| `bump_type` | `release`, optional | `''` | A prior `compute` step's `bump_type` output (the resolved update type: major/minor/patch). When set, triggers the custom release body described below. |
 | `postfix` | `release`, optional | `''` | A prior `compute` step's `postfix` output. Used in the custom release body. |
 | `previous_version` | `release`, optional | `''` | A prior `compute` step's `previous_version` output. Used in the custom release body. |
 | `commit_messages` | `release`, optional | `''` | A prior `compute` step's `commit_messages` output. Used in the custom release body. |
@@ -127,8 +127,8 @@ jobs:
 | Output | Produced by mode | Example | Description |
 |---|---|---|---|
 | `version` | `compute` | `1.33.0-alpha` | The computed next version (no tag prefix). |
-| `previous_version` | `compute` | `1.32.4-alpha` | Baseline version bumped from, within the same channel. |
-| `bump_type` | `compute` | `minor` | `major`, `minor`, or `patch`. |
+| `previous_version` | `compute` | `1.32.4-alpha` | Baseline version updated from, within the same channel. |
+| `bump_type` | `compute` | `minor` | Resolved update type: `major`, `minor`, or `patch`. |
 | `postfix` | `compute` | `alpha` | Resolved postfix, or empty string if none. |
 | `build_number` | `compute` | `102.8edwfac` | `${run_number}.${short_sha}` (7-char short SHA). |
 | `run_id` | `compute` | `123456789` | The GitHub Actions run ID. |
@@ -139,7 +139,7 @@ jobs:
 | `release_id` | `release` | `123456789` | Numeric ID of the created GitHub Release. Empty if `create_release` was `false`. |
 | `release_url` | `release` | `https://github.com/org/repo/releases/tag/v1.33.0-alpha` | HTML URL of the created Release. Empty if `create_release` was `false`. |
 
-`mode: release` fails loudly if the tag already exists, rather than overwriting it. If `bump_type` is provided, the Release body is built from `bump_type`/`postfix`/`previous_version`/`commit_messages` — listing the bump rationale and the exact commits that were scanned to produce it, which is more specific than GitHub's generic auto-generated notes. If `bump_type` is omitted, the Release falls back to `generate_release_notes: true`. Either way, that same content also becomes the annotated tag's own message, so `git show <tag>` and GitHub's Tags page show real content even when no Release exists yet.
+`mode: release` fails loudly if the tag already exists, rather than overwriting it. If `bump_type` is provided, the Release body is built from `bump_type`/`postfix`/`previous_version`/`commit_messages` — listing the update rationale and the exact commits that were scanned to produce it, which is more specific than GitHub's generic auto-generated notes. If `bump_type` is omitted, the Release falls back to `generate_release_notes: true`. The annotated tag's own message is always just the tag name — GitHub falls back to displaying a tag's message in place of the Release title/body on some surfaces (e.g. the repo homepage's Releases widget) whenever the Release itself has no name/body, so keeping it minimal avoids leaking release-note text into places that expect a clean version number.
 
 ### Tag-only mode (`create_release: false`)
 
@@ -185,11 +185,11 @@ tag_prefix: v
 default_bump: patch          # used when neither branch_rules nor commit_rules match
 precedence: commit-first     # branch-first | commit-first — tiebreaker when signals differ
 default_postfix: ""          # fallback postfix for branches matching neither main_branch nor any postfix rule
-initial_version: "1.0.0"     # first release on a channel with no prior tag -- used as-is, no bump applied
+initial_version: "1.0.0"     # first release on a channel with no prior tag -- used as-is, no update applied
 create_release: true         # false = tag only, no GitHub Release (see "Tag-only mode" below)
 release_branch_rules: []     # non-empty = only release on branches matching one of these patterns (see "Branch-gated release" below)
 
-branch_rules:                  # bump signal from branch name — patterns grouped by level, highest matching level wins
+branch_rules:                  # update signal from branch name — patterns grouped by level, highest matching level wins
   major:
     - '^release/major/'
   minor:
@@ -199,7 +199,7 @@ branch_rules:                  # bump signal from branch name — patterns group
     - '^hotfix/'
     - '^bugfix/'
 
-commit_rules:                  # bump signal from commit messages — highest-severity level with any matching commit wins
+commit_rules:                  # update signal from commit messages — highest-severity level with any matching commit wins
   major:
     - '^BREAKING CHANGE'
     - '!:'
@@ -216,12 +216,12 @@ branch_postfix_rules:         # postfix resolved ONLY from branch name — a sep
     postfix: beta
 ```
 
-Note that `branch_rules` (bump signal) and `branch_postfix_rules` (postfix/channel signal) are independent — the same branch name is checked against both rule sets, but for different purposes and with different keywords. A branch like `release/major/alpha-payments` could match `branch_rules` for a `major` bump *and* `branch_postfix_rules` for the `alpha` channel, entirely independently.
+Note that `branch_rules` (update signal) and `branch_postfix_rules` (postfix/channel signal) are independent — the same branch name is checked against both rule sets, but for different purposes and with different keywords. A branch like `release/major/alpha-payments` could match `branch_rules` for a `major` update *and* `branch_postfix_rules` for the `alpha` channel, entirely independently.
 
 ## Known v1 limitations
 
-- No numeric prerelease counter — releases on a channel are always `-alpha`, never `-alpha.3`. The latest same-channel tag is always the baseline; bump severity is recomputed from only the commits added since that tag on every run, so a re-run with no new bump-worthy commits recomputes the same version. Attempting to tag it again will fail loudly rather than silently duplicate a release.
-- Cold start: a channel with no prior tag starts at `initial_version` (default `1.0.0`) directly — no bump is applied to it, since there's no baseline to bump from. Set `initial_version` in the config to start a channel somewhere else (e.g. `"0.1.0"`).
+- No numeric prerelease counter — releases on a channel are always `-alpha`, never `-alpha.3`. The latest same-channel tag is always the baseline; the update size is recomputed from only the commits added since that tag on every run, so a re-run with no update-worthy commits recomputes the same version. Attempting to tag it again will fail loudly rather than silently duplicate a release.
+- Cold start: a channel with no prior tag starts at `initial_version` (default `1.0.0`) directly — no update is applied to it, since there's no baseline to update from. Set `initial_version` in the config to start a channel somewhere else (e.g. `"0.1.0"`).
 - Config validation errors surface as a formatted list of field/message pairs; a missing config file or malformed YAML fails the run with an actionable message.
 
 ## Local verification
@@ -232,4 +232,4 @@ Before wiring this into a real workflow, sanity-check version computation agains
 npm run dry-run -- --repo . --branch feature/alpha-foo --config semantic-ops.yml
 ```
 
-This prints the resolved postfix, baseline, scanned commit messages, bump type, and computed version as JSON.
+This prints the resolved postfix, baseline, scanned commit messages, update type, and computed version as JSON.

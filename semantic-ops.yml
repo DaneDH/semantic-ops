@@ -3,7 +3,7 @@ tag_prefix: v
 default_bump: patch
 precedence: commit-first
 default_postfix: ""
-initial_version: "1.0.0"     # first release on a channel with no prior tag -- used as-is, no bump applied
+initial_version: "1.0.0"     # first release on a channel with no prior tag -- used as-is, no update applied
 create_release: false         # false = tag only, no GitHub Release (e.g. to leave a tag free for manual Marketplace publishing)
 release_branch_rules:         # if create_release were true, only these branches would actually release (tagging is unaffected either way)
   - '^main$'

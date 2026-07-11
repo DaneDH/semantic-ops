@@ -88,7 +88,7 @@ async function runCompute(): Promise<void> {
   const commitMessages =
     prCommitMessages ?? (await getCommitMessagesSince(baseline ? `${config.tag_prefix}${baseline.raw}` : null));
   const bumpType = resolveBump(bumpBranch, commitMessages, config);
-  core.info(`Resolved bump type: ${bumpType}`);
+  core.info(`Resolved update type: ${bumpType}`);
 
   const version = computeNextVersion(baseline, bumpType, postfix, config.initial_version);
   const outputs = buildOutputs({
