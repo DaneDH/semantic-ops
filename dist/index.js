@@ -37594,13 +37594,15 @@ async function createTagAndRelease(octokit, params) {
         owner,
         repo,
         tag: tagName,
-        // Keep this to just the tag name. GitHub falls back to showing the
-        // annotated tag's own message in place of the Release title/body on
-        // various surfaces (e.g. the repo homepage's Releases widget) whenever
-        // the Release itself has no name/body -- putting the full release
-        // notes here leaked that whole block of text into those surfaces
-        // looking cluttered, instead of a clean version number.
-        message: tagName,
+        // GitHub's bare-tag view (no Release attached) renders its heading as
+        // "{tag}: {first line of message}" UNLESS the message's first line is
+        // exactly the tag name, in which case it shows the tag name alone with
+        // no smushed suffix. So the tag name always goes first, on its own
+        // line, with the real release notes following after a blank line --
+        // giving a clean heading AND full detail below, even with no Release
+        // object (which matters most when create_release is false, since the
+        // tag is the only place this content can live at all).
+        message: body ? `${tagName}\n\n${body}` : tagName,
         object: sha,
         type: 'commit',
     });
