@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildReleaseBody } from '../src/releaseNotes';
 
 describe('buildReleaseBody', () => {
-  it('includes bump type, channel, previous version, and commit list', () => {
+  it('summarizes bump type (as an "update" label), channel, and previous version in one line', () => {
     const body = buildReleaseBody({
       bumpType: 'minor',
       postfix: 'alpha',
@@ -10,9 +10,7 @@ describe('buildReleaseBody', () => {
       commitMessages: ['feat: add thing', 'fix: bug'],
     });
 
-    expect(body).toContain('**Bump type:** minor');
-    expect(body).toContain('**Channel:** alpha');
-    expect(body).toContain('**Previous version:** 1.32.4-alpha');
+    expect(body).toContain('_Minor update — alpha channel, bumped from 1.32.4-alpha._');
     expect(body).toContain('- feat: add thing');
     expect(body).toContain('- fix: bug');
   });
@@ -24,17 +22,18 @@ describe('buildReleaseBody', () => {
       previousVersion: '2.12.28',
       commitMessages: ['fix: bug'],
     });
-    expect(body).toContain('**Channel:** production (no postfix)');
+    expect(body).toContain('_Patch update — production, bumped from 2.12.28._');
   });
 
-  it('omits the previous version line on cold start', () => {
+  it('omits the "bumped from" clause on cold start', () => {
     const body = buildReleaseBody({
       bumpType: 'patch',
       postfix: '',
       previousVersion: '',
       commitMessages: [],
     });
-    expect(body).not.toContain('Previous version');
+    expect(body).toContain('_Patch update — production._');
+    expect(body).not.toContain('bumped from');
   });
 
   it('notes when there are no commits since the previous release', () => {

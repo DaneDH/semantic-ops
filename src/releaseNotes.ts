@@ -5,25 +5,31 @@ export interface ReleaseNotesParams {
   commitMessages: string[];
 }
 
+function bumpLabel(bumpType: string): string {
+  return `${bumpType.charAt(0).toUpperCase()}${bumpType.slice(1)} update`;
+}
+
 /**
  * Builds a release body that explains why this version was chosen, using the
  * exact commit messages semantic-ops scanned to resolve bump_type -- more
  * specific than GitHub's generic auto-generated release notes, which just
  * summarize merged PRs/commits without any bump rationale.
+ *
+ * The Release title is just the version (set by the caller), so this body
+ * leads with one light descriptive line -- not a stack of bold labels
+ * competing with the title -- before the commit list.
  */
 export function buildReleaseBody(params: ReleaseNotesParams): string {
   const { bumpType, postfix, previousVersion, commitMessages } = params;
 
-  const lines: string[] = [
-    `**Bump type:** ${bumpType}`,
-    `**Channel:** ${postfix || 'production (no postfix)'}`,
-  ];
-
+  const channel = postfix ? `${postfix} channel` : 'production';
+  let summary = `_${bumpLabel(bumpType)} — ${channel}`;
   if (previousVersion) {
-    lines.push(`**Previous version:** ${previousVersion}`);
+    summary += `, bumped from ${previousVersion}`;
   }
+  summary += '._';
 
-  lines.push('');
+  const lines: string[] = [summary, ''];
 
   if (commitMessages.length > 0) {
     lines.push('**Commits included in this release:**');
