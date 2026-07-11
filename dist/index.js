@@ -37378,7 +37378,7 @@ async function runCompute() {
     core.info(`Baseline version for this channel: ${baseline ? baseline.raw : `(none, cold start from ${config.initial_version})`}`);
     const commitMessages = prCommitMessages ?? (await (0, commits_1.getCommitMessagesSince)(baseline ? `${config.tag_prefix}${baseline.raw}` : null));
     const bumpType = (0, bump_1.resolveBump)(bumpBranch, commitMessages, config);
-    core.info(`Resolved bump type: ${bumpType}`);
+    core.info(`Resolved update type: ${bumpType}`);
     const version = (0, version_1.computeNextVersion)(baseline, bumpType, postfix, config.initial_version);
     const outputs = (0, outputs_1.buildOutputs)({
         version,
@@ -37588,17 +37588,19 @@ async function createTagAndRelease(octokit, params) {
     const { owner, repo, tagName, sha, version, prerelease, body, createRelease = true } = params;
     if (await tagRefExists(octokit, owner, repo, tagName)) {
         throw new ReleaseError(`Tag "${tagName}" already exists. semantic-ops will not overwrite an existing tag -- ` +
-            'this usually means no new bump-worthy commits have landed since the last release on this channel.');
+            'this usually means no new update-worthy commits have landed since the last release on this channel.');
     }
     const tagObject = await octokit.rest.git.createTag({
         owner,
         repo,
         tag: tagName,
-        // The annotated tag's own message carries the real release notes (falls
-        // back to the tag name when none were computed), so `git show <tag>` or
-        // GitHub's Tags page shows real content even if createRelease is false
-        // and no Release description exists yet.
-        message: body || tagName,
+        // Keep this to just the tag name. GitHub falls back to showing the
+        // annotated tag's own message in place of the Release title/body on
+        // various surfaces (e.g. the repo homepage's Releases widget) whenever
+        // the Release itself has no name/body -- putting the full release
+        // notes here leaked that whole block of text into those surfaces
+        // looking cluttered, instead of a clean version number.
+        message: tagName,
         object: sha,
         type: 'commit',
     });

@@ -56,7 +56,7 @@ describe('createTagAndRelease', () => {
     expect(result).toEqual({ releaseId: null, releaseUrl: null });
   });
 
-  it('uses the provided body as the annotated tag message when given', async () => {
+  it('always uses just the tag name as the annotated tag message, even when a body is given', async () => {
     const { octokit, createTag } = makeOctokit();
 
     await createTagAndRelease(octokit as any, {
@@ -64,16 +64,6 @@ describe('createTagAndRelease', () => {
       createRelease: false,
       body: 'feat: add thing\n\nFull body here.',
     });
-
-    expect(createTag).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'feat: add thing\n\nFull body here.' }),
-    );
-  });
-
-  it('falls back to the tag name as the tag message when no body is given', async () => {
-    const { octokit, createTag } = makeOctokit();
-
-    await createTagAndRelease(octokit as any, { ...baseParams, createRelease: false });
 
     expect(createTag).toHaveBeenCalledWith(expect.objectContaining({ message: 'v1.0.0' }));
   });
