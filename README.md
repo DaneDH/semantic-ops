@@ -177,6 +177,12 @@ A Release is created only when **both** `create_release` resolves to `true` (fro
 
 This is deliberately a simple, coarse gate: it matches against the plain current branch (e.g. `main` after a PR merges), not the PR-context-resolved branch name used for `branch_rules`/`commit_rules` (see [Resolving branch and commits correctly after a PR merges](#resolving-branch-and-commits-correctly-after-a-pr-merges) above) — those are two independent concerns.
 
+### Freeze branch-name classification after the first push (`branch_rules_first_push_only`)
+
+`branch_rules` re-evaluates on every push, so a branch like `feature/xyz` matching `^feature/ → minor` bumps minor again on *every* push to it — even later pushes that just add more work to the same already-classified feature. Set `branch_rules_first_push_only: true` in `semantic-ops.yml` to make `branch_rules` apply only on the push that actually creates the branch (detected from the push event itself — no extra API calls). Every later push to that same, already-existing branch skips `branch_rules` and resolves purely from `commit_rules`/`default_bump` instead — so a later commit can still bump minor on its own merit (e.g. a genuine `feat:` commit), it just won't get minor automatically re-applied just because the branch name still matches.
+
+This never restricts `main_branch` — `branch_rules` always stays active there, regardless of this setting, since `main` is never a "first push only" concern.
+
 ## Configuration (`semantic-ops.yml`)
 
 ```yaml
@@ -188,6 +194,7 @@ default_postfix: ""          # fallback postfix for branches matching neither ma
 initial_version: "1.0.0"     # first release on a channel with no prior tag -- used as-is, no update applied
 create_release: true         # false = tag only, no GitHub Release (see "Tag-only mode" below)
 release_branch_rules: []     # non-empty = only release on branches matching one of these patterns (see "Branch-gated release" below)
+branch_rules_first_push_only: false   # true = branch_rules only applies on a branch's first push (see "Freeze branch-name classification" below); never restricts main_branch
 
 branch_rules:                  # update signal from branch name — patterns grouped by level, highest matching level wins
   major:

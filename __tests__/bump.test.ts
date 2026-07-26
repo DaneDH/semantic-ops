@@ -94,4 +94,19 @@ describe('resolveBump', () => {
     const cfg = config('commit-first');
     expect(resolveBump('feature/foo', ['chore: nothing'], cfg)).toBe('patch');
   });
+
+  it('defaults to branchRulesActive = true when the argument is omitted', () => {
+    const cfg = config('commit-first');
+    expect(resolveBump('hotfix/foo', ['chore: nothing'], cfg)).toBe('patch');
+  });
+
+  it('ignores branch_rules when branchRulesActive is false, using commit_rules instead', () => {
+    const cfg = config('branch-first');
+    expect(resolveBump('release/major/foo', ['feat: add thing'], cfg, false)).toBe('minor');
+  });
+
+  it('falls back to default_bump when branchRulesActive is false and no commit matches either', () => {
+    const cfg = config('branch-first');
+    expect(resolveBump('release/major/foo', ['chore: nothing'], cfg, false)).toBe('patch');
+  });
 });
