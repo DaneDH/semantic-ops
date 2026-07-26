@@ -11,6 +11,7 @@ import { createTagAndRelease } from './release';
 import { buildReleaseBody } from './releaseNotes';
 import { findMergedPullRequestContext } from './prContext';
 import { shouldCreateRelease } from './releaseGate';
+import { hasBranchAlreadyBeenTagged } from './branchHistory';
 
 /**
  * Resolves whether to create a GitHub Release: an explicit "true"/"false"
@@ -88,17 +89,24 @@ async function runCompute(): Promise<void> {
   const commitMessages =
     prCommitMessages ?? (await getCommitMessagesSince(baseline ? `${config.tag_prefix}${baseline.raw}` : null));
 
-  // branch_rules_first_push_only: once a branch has already had a push
-  // before, its name-based classification (e.g. "feature/" -> minor)
+  // branch_rules_first_push_only: once a branch has already produced a tag
+  // of its own, its name-based classification (e.g. "feature/" -> minor)
   // shouldn't keep re-firing on every later push to the same branch --
-  // only commit_rules/default_bump should drive subsequent pushes. Never
-  // restricts main_branch, which always keeps branch_rules active.
-  const branchRulesActive =
-    !config.branch_rules_first_push_only || runContext.isNewBranch || currentBranch === config.main_branch;
-  if (!branchRulesActive) {
-    core.info(
-      `branch_rules_first_push_only is enabled and "${currentBranch}" already existed before this push -- skipping branch_rules, using commit_rules/default_bump only.`,
-    );
+  // only commit_rules/default_bump should drive subsequent pushes. Checked
+  // via git history (has this branch ever been tagged), not the push
+  // event's ref-creation flag -- that flag alone would wrongly treat a
+  // retry-after-failure push as "already existed" even though no tag was
+  // ever actually created for it. Never restricts main_branch, which
+  // always keeps branch_rules active.
+  let branchRulesActive = true;
+  if (config.branch_rules_first_push_only && currentBranch !== config.main_branch) {
+    const alreadyTagged = await hasBranchAlreadyBeenTagged(config.main_branch);
+    branchRulesActive = !alreadyTagged;
+    if (!branchRulesActive) {
+      core.info(
+        `branch_rules_first_push_only is enabled and "${currentBranch}" already has a tag of its own -- skipping branch_rules, using commit_rules/default_bump only.`,
+      );
+    }
   }
 
   const bumpType = resolveBump(bumpBranch, commitMessages, config, branchRulesActive);

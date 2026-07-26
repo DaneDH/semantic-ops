@@ -36895,6 +36895,71 @@ function findBaselineTag(tags, postfix, tagPrefix) {
 
 /***/ }),
 
+/***/ 5155:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.hasBranchAlreadyBeenTagged = hasBranchAlreadyBeenTagged;
+const exec_1 = __nccwpck_require__(5236);
+const commits_1 = __nccwpck_require__(5477);
+async function findMergeBase(mainBranch) {
+    // Prefer the remote-tracking ref (present after actions/checkout with
+    // fetch-depth: 0); fall back to a plain local branch name for local/dry-run
+    // use where there may be no "origin" remote at all.
+    for (const ref of [`origin/${mainBranch}`, mainBranch]) {
+        const result = await (0, exec_1.getExecOutput)('git', ['merge-base', ref, 'HEAD'], {
+            silent: true,
+            ignoreReturnCode: true,
+        });
+        if (result.exitCode === 0) {
+            return result.stdout.trim();
+        }
+    }
+    throw new commits_1.GitError(`Could not find a merge base between "${mainBranch}" and HEAD. ` +
+        'Ensure actions/checkout uses fetch-depth: 0 so main_branch\'s full history is available locally.');
+}
+async function tagsMergedInto(ref) {
+    const result = await (0, exec_1.getExecOutput)('git', ['tag', '--merged', ref], {
+        silent: true,
+        ignoreReturnCode: true,
+    });
+    if (result.exitCode !== 0) {
+        throw new commits_1.GitError(`"git tag --merged ${ref}" failed: ${result.stderr.trim()}`);
+    }
+    return new Set(result.stdout
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0));
+}
+/**
+ * Whether this branch has ever produced a tag of its own -- not whether the
+ * branch ref itself is "new". Those two differ exactly when a branch's first
+ * push succeeds through compute but a later step (typecheck/test/build/
+ * release) fails before a tag is created: the branch ref already exists on
+ * retry, but no tag has ever actually been made for it. Answered by finding
+ * where this branch forked from main_branch, then checking whether any tag
+ * reachable from HEAD is NOT also reachable from that fork point -- i.e. a
+ * tag created specifically on this branch's own history, not one that
+ * already existed on main before this branch diverged.
+ */
+async function hasBranchAlreadyBeenTagged(mainBranch) {
+    const mergeBase = await findMergeBase(mainBranch);
+    const [tagsAtHead, tagsAtMergeBase] = await Promise.all([
+        tagsMergedInto('HEAD'),
+        tagsMergedInto(mergeBase),
+    ]);
+    for (const tag of tagsAtHead) {
+        if (!tagsAtMergeBase.has(tag))
+            return true;
+    }
+    return false;
+}
+
+
+/***/ }),
+
 /***/ 2123:
 /***/ ((__unused_webpack_module, exports) => {
 
@@ -37251,7 +37316,6 @@ exports.resolveRunContext = resolveRunContext;
 exports.getOctokit = getOctokit;
 exports.repoInfo = repoInfo;
 const github = __importStar(__nccwpck_require__(3228));
-const ZERO_SHA = '0000000000000000000000000000000000000000';
 function resolveRunContext() {
     const { context } = github;
     // For pull_request events, context.ref points at refs/pull/N/merge -- the
@@ -37260,14 +37324,11 @@ function resolveRunContext() {
     const branchName = headRef && headRef.length > 0
         ? headRef
         : context.ref.replace(/^refs\/heads\//, '');
-    const payload = context.payload;
-    const isNewBranch = payload.created === true || payload.before === ZERO_SHA;
     return {
         branchName,
         sha: context.sha,
         runId: context.runId,
         runNumber: context.runNumber,
-        isNewBranch,
     };
 }
 function getOctokit(token) {
@@ -37333,6 +37394,7 @@ const release_1 = __nccwpck_require__(4202);
 const releaseNotes_1 = __nccwpck_require__(8721);
 const prContext_1 = __nccwpck_require__(9782);
 const releaseGate_1 = __nccwpck_require__(4149);
+const branchHistory_1 = __nccwpck_require__(5155);
 /**
  * Resolves whether to create a GitHub Release: an explicit "true"/"false"
  * on the create_release input always wins (lets one job override the
@@ -37396,14 +37458,22 @@ async function runCompute() {
     const baseline = (0, baseline_1.findBaselineTag)(tags, postfix, config.tag_prefix);
     core.info(`Baseline version for this channel: ${baseline ? baseline.raw : `(none, cold start from ${config.initial_version})`}`);
     const commitMessages = prCommitMessages ?? (await (0, commits_1.getCommitMessagesSince)(baseline ? `${config.tag_prefix}${baseline.raw}` : null));
-    // branch_rules_first_push_only: once a branch has already had a push
-    // before, its name-based classification (e.g. "feature/" -> minor)
+    // branch_rules_first_push_only: once a branch has already produced a tag
+    // of its own, its name-based classification (e.g. "feature/" -> minor)
     // shouldn't keep re-firing on every later push to the same branch --
-    // only commit_rules/default_bump should drive subsequent pushes. Never
-    // restricts main_branch, which always keeps branch_rules active.
-    const branchRulesActive = !config.branch_rules_first_push_only || runContext.isNewBranch || currentBranch === config.main_branch;
-    if (!branchRulesActive) {
-        core.info(`branch_rules_first_push_only is enabled and "${currentBranch}" already existed before this push -- skipping branch_rules, using commit_rules/default_bump only.`);
+    // only commit_rules/default_bump should drive subsequent pushes. Checked
+    // via git history (has this branch ever been tagged), not the push
+    // event's ref-creation flag -- that flag alone would wrongly treat a
+    // retry-after-failure push as "already existed" even though no tag was
+    // ever actually created for it. Never restricts main_branch, which
+    // always keeps branch_rules active.
+    let branchRulesActive = true;
+    if (config.branch_rules_first_push_only && currentBranch !== config.main_branch) {
+        const alreadyTagged = await (0, branchHistory_1.hasBranchAlreadyBeenTagged)(config.main_branch);
+        branchRulesActive = !alreadyTagged;
+        if (!branchRulesActive) {
+            core.info(`branch_rules_first_push_only is enabled and "${currentBranch}" already has a tag of its own -- skipping branch_rules, using commit_rules/default_bump only.`);
+        }
     }
     const bumpType = (0, bump_1.resolveBump)(bumpBranch, commitMessages, config, branchRulesActive);
     core.info(`Resolved update type: ${bumpType}`);
