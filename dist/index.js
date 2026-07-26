@@ -36942,8 +36942,15 @@ function matchCommitRules(commitMessages, rules) {
     }
     return null;
 }
-function resolveBump(branchName, commitMessages, config) {
-    const branchBump = matchBranchRules(branchName, config.branch_rules);
+function resolveBump(branchName, commitMessages, config, 
+/**
+ * Whether branch_rules should be consulted at all for this run. Set
+ * false to make a branch's name-based classification apply only once
+ * (its first push) -- see branch_rules_first_push_only. Defaults to
+ * true so existing callers/tests are unaffected.
+ */
+branchRulesActive = true) {
+    const branchBump = branchRulesActive ? matchBranchRules(branchName, config.branch_rules) : null;
     const commitBump = matchCommitRules(commitMessages, config.commit_rules);
     if (branchBump && commitBump) {
         if (branchBump === commitBump)
@@ -37106,6 +37113,14 @@ exports.ConfigSchema = zod_1.z.object({
     // today's behavior. Never affects tagging, which always happens
     // regardless of this field.
     release_branch_rules: zod_1.z.array(regexPattern).default([]),
+    // When true, branch_rules only classifies a branch's bump on the push
+    // that created it -- later pushes to that same (already-existing)
+    // branch fall through to commit_rules/default_bump instead, so
+    // repeated work on one feature branch doesn't keep re-bumping minor
+    // just because the branch name matches every time. Never applies to
+    // main_branch, which always keeps branch_rules active. Default false
+    // preserves today's behavior (branch_rules always active).
+    branch_rules_first_push_only: zod_1.z.boolean().default(false),
     branch_rules: BumpRuleSet.default({}),
     commit_rules: BumpRuleSet.default({}),
     branch_postfix_rules: zod_1.z.array(PostfixRule).default([]),
@@ -37236,6 +37251,7 @@ exports.resolveRunContext = resolveRunContext;
 exports.getOctokit = getOctokit;
 exports.repoInfo = repoInfo;
 const github = __importStar(__nccwpck_require__(3228));
+const ZERO_SHA = '0000000000000000000000000000000000000000';
 function resolveRunContext() {
     const { context } = github;
     // For pull_request events, context.ref points at refs/pull/N/merge -- the
@@ -37244,11 +37260,14 @@ function resolveRunContext() {
     const branchName = headRef && headRef.length > 0
         ? headRef
         : context.ref.replace(/^refs\/heads\//, '');
+    const payload = context.payload;
+    const isNewBranch = payload.created === true || payload.before === ZERO_SHA;
     return {
         branchName,
         sha: context.sha,
         runId: context.runId,
         runNumber: context.runNumber,
+        isNewBranch,
     };
 }
 function getOctokit(token) {
@@ -37377,7 +37396,16 @@ async function runCompute() {
     const baseline = (0, baseline_1.findBaselineTag)(tags, postfix, config.tag_prefix);
     core.info(`Baseline version for this channel: ${baseline ? baseline.raw : `(none, cold start from ${config.initial_version})`}`);
     const commitMessages = prCommitMessages ?? (await (0, commits_1.getCommitMessagesSince)(baseline ? `${config.tag_prefix}${baseline.raw}` : null));
-    const bumpType = (0, bump_1.resolveBump)(bumpBranch, commitMessages, config);
+    // branch_rules_first_push_only: once a branch has already had a push
+    // before, its name-based classification (e.g. "feature/" -> minor)
+    // shouldn't keep re-firing on every later push to the same branch --
+    // only commit_rules/default_bump should drive subsequent pushes. Never
+    // restricts main_branch, which always keeps branch_rules active.
+    const branchRulesActive = !config.branch_rules_first_push_only || runContext.isNewBranch || currentBranch === config.main_branch;
+    if (!branchRulesActive) {
+        core.info(`branch_rules_first_push_only is enabled and "${currentBranch}" already existed before this push -- skipping branch_rules, using commit_rules/default_bump only.`);
+    }
+    const bumpType = (0, bump_1.resolveBump)(bumpBranch, commitMessages, config, branchRulesActive);
     core.info(`Resolved update type: ${bumpType}`);
     const version = (0, version_1.computeNextVersion)(baseline, bumpType, postfix, config.initial_version);
     const outputs = (0, outputs_1.buildOutputs)({

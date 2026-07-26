@@ -87,7 +87,21 @@ async function runCompute(): Promise<void> {
 
   const commitMessages =
     prCommitMessages ?? (await getCommitMessagesSince(baseline ? `${config.tag_prefix}${baseline.raw}` : null));
-  const bumpType = resolveBump(bumpBranch, commitMessages, config);
+
+  // branch_rules_first_push_only: once a branch has already had a push
+  // before, its name-based classification (e.g. "feature/" -> minor)
+  // shouldn't keep re-firing on every later push to the same branch --
+  // only commit_rules/default_bump should drive subsequent pushes. Never
+  // restricts main_branch, which always keeps branch_rules active.
+  const branchRulesActive =
+    !config.branch_rules_first_push_only || runContext.isNewBranch || currentBranch === config.main_branch;
+  if (!branchRulesActive) {
+    core.info(
+      `branch_rules_first_push_only is enabled and "${currentBranch}" already existed before this push -- skipping branch_rules, using commit_rules/default_bump only.`,
+    );
+  }
+
+  const bumpType = resolveBump(bumpBranch, commitMessages, config, branchRulesActive);
   core.info(`Resolved update type: ${bumpType}`);
 
   const version = computeNextVersion(baseline, bumpType, postfix, config.initial_version);

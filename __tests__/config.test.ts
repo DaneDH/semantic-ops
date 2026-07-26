@@ -12,6 +12,7 @@ describe('parseConfig', () => {
     expect(cfg.initial_version).toBe('1.0.0');
     expect(cfg.create_release).toBe(true);
     expect(cfg.release_branch_rules).toEqual([]);
+    expect(cfg.branch_rules_first_push_only).toBe(false);
     expect(cfg.branch_rules).toEqual({ major: [], minor: [], patch: [] });
     expect(cfg.commit_rules).toEqual({ major: [], minor: [], patch: [] });
     expect(cfg.branch_postfix_rules).toEqual([]);
@@ -73,5 +74,10 @@ describe('parseConfig', () => {
     expect(() => parseConfig({ release_branch_rules: ['(unclosed'] })).toThrow(
       /not a valid regular expression/,
     );
+  });
+
+  it('accepts an explicit branch_rules_first_push_only: true', () => {
+    const cfg = parseConfig({ branch_rules_first_push_only: true });
+    expect(cfg.branch_rules_first_push_only).toBe(true);
   });
 });

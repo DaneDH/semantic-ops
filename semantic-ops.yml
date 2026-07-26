@@ -7,6 +7,7 @@ initial_version: "1.0.0"     # first release on a channel with no prior tag -- u
 create_release: false         # false = tag only, no GitHub Release (e.g. to leave a tag free for manual Marketplace publishing)
 release_branch_rules:         # if create_release were true, only these branches would actually release (tagging is unaffected either way)
   - '^main$'
+branch_rules_first_push_only: true   # true = branch_rules only classifies a branch's first push; never restricts main_branch
 
 branch_rules:
   major:
