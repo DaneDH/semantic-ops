@@ -37007,15 +37007,8 @@ function matchCommitRules(commitMessages, rules) {
     }
     return null;
 }
-function resolveBump(branchName, commitMessages, config, 
-/**
- * Whether branch_rules should be consulted at all for this run. Set
- * false to make a branch's name-based classification apply only once
- * (its first push) -- see branch_rules_first_push_only. Defaults to
- * true so existing callers/tests are unaffected.
- */
-branchRulesActive = true) {
-    const branchBump = branchRulesActive ? matchBranchRules(branchName, config.branch_rules) : null;
+function resolveBump(branchName, commitMessages, config) {
+    const branchBump = matchBranchRules(branchName, config.branch_rules);
     const commitBump = matchCommitRules(commitMessages, config.commit_rules);
     if (branchBump && commitBump) {
         if (branchBump === commitBump)
@@ -37178,14 +37171,15 @@ exports.ConfigSchema = zod_1.z.object({
     // today's behavior. Never affects tagging, which always happens
     // regardless of this field.
     release_branch_rules: zod_1.z.array(regexPattern).default([]),
-    // When true, branch_rules only classifies a branch's bump on the push
-    // that created it -- later pushes to that same (already-existing)
-    // branch fall through to commit_rules/default_bump instead, so
-    // repeated work on one feature branch doesn't keep re-bumping minor
-    // just because the branch name matches every time. Never applies to
-    // main_branch, which always keeps branch_rules active. Default false
-    // preserves today's behavior (branch_rules always active).
-    branch_rules_first_push_only: zod_1.z.boolean().default(false),
+    // When true, only a branch's first push (before it has produced any tag
+    // of its own) resolves normally via branch_rules/commit_rules/
+    // default_bump. Every push after that is unconditionally forced to
+    // "patch" -- regardless of what the branch name or commit messages say
+    // -- so repeated work on one feature branch doesn't keep re-bumping
+    // minor/major just because it still matches a rule. Never applies to
+    // main_branch, which always resolves normally. Default false preserves
+    // today's behavior (branch_rules/commit_rules always active).
+    force_patch_after_first_push: zod_1.z.boolean().default(false),
     branch_rules: BumpRuleSet.default({}),
     commit_rules: BumpRuleSet.default({}),
     branch_postfix_rules: zod_1.z.array(PostfixRule).default([]),
@@ -37458,24 +37452,26 @@ async function runCompute() {
     const baseline = (0, baseline_1.findBaselineTag)(tags, postfix, config.tag_prefix);
     core.info(`Baseline version for this channel: ${baseline ? baseline.raw : `(none, cold start from ${config.initial_version})`}`);
     const commitMessages = prCommitMessages ?? (await (0, commits_1.getCommitMessagesSince)(baseline ? `${config.tag_prefix}${baseline.raw}` : null));
-    // branch_rules_first_push_only: once a branch has already produced a tag
-    // of its own, its name-based classification (e.g. "feature/" -> minor)
-    // shouldn't keep re-firing on every later push to the same branch --
-    // only commit_rules/default_bump should drive subsequent pushes. Checked
-    // via git history (has this branch ever been tagged), not the push
-    // event's ref-creation flag -- that flag alone would wrongly treat a
+    // force_patch_after_first_push: once a branch has already produced a tag
+    // of its own, every later push to it is unconditionally "patch" --
+    // branch_rules and commit_rules are both bypassed entirely, regardless
+    // of what the branch name or commit messages say. Only the branch's
+    // genuine first push (no tag yet) resolves normally. Checked via git
+    // history (has this branch ever been tagged), not the push event's
+    // ref-creation flag -- that flag alone would wrongly treat a
     // retry-after-failure push as "already existed" even though no tag was
     // ever actually created for it. Never restricts main_branch, which
-    // always keeps branch_rules active.
-    let branchRulesActive = true;
-    if (config.branch_rules_first_push_only && currentBranch !== config.main_branch) {
-        const alreadyTagged = await (0, branchHistory_1.hasBranchAlreadyBeenTagged)(config.main_branch);
-        branchRulesActive = !alreadyTagged;
-        if (!branchRulesActive) {
-            core.info(`branch_rules_first_push_only is enabled and "${currentBranch}" already has a tag of its own -- skipping branch_rules, using commit_rules/default_bump only.`);
-        }
+    // always resolves normally.
+    let bumpType;
+    if (config.force_patch_after_first_push &&
+        currentBranch !== config.main_branch &&
+        (await (0, branchHistory_1.hasBranchAlreadyBeenTagged)(config.main_branch))) {
+        bumpType = 'patch';
+        core.info(`force_patch_after_first_push is enabled and "${currentBranch}" already has a tag of its own -- forcing patch, ignoring branch_rules and commit_rules.`);
     }
-    const bumpType = (0, bump_1.resolveBump)(bumpBranch, commitMessages, config, branchRulesActive);
+    else {
+        bumpType = (0, bump_1.resolveBump)(bumpBranch, commitMessages, config);
+    }
     core.info(`Resolved update type: ${bumpType}`);
     const version = (0, version_1.computeNextVersion)(baseline, bumpType, postfix, config.initial_version);
     const outputs = (0, outputs_1.buildOutputs)({

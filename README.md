@@ -177,13 +177,13 @@ A Release is created only when **both** `create_release` resolves to `true` (fro
 
 This is deliberately a simple, coarse gate: it matches against the plain current branch (e.g. `main` after a PR merges), not the PR-context-resolved branch name used for `branch_rules`/`commit_rules` (see [Resolving branch and commits correctly after a PR merges](#resolving-branch-and-commits-correctly-after-a-pr-merges) above) — those are two independent concerns.
 
-### Freeze branch-name classification after the first push (`branch_rules_first_push_only`)
+### Force patch on every push after the first (`force_patch_after_first_push`)
 
-`branch_rules` re-evaluates on every push, so a branch like `feature/xyz` matching `^feature/ → minor` bumps minor again on *every* push to it — even later pushes that just add more work to the same already-classified feature. Set `branch_rules_first_push_only: true` in `semantic-ops.yml` to make `branch_rules` apply only until this branch has produced a tag of its own. Every later push to a branch that's already been tagged skips `branch_rules` and resolves purely from `commit_rules`/`default_bump` instead — so a later commit can still bump minor on its own merit (e.g. a genuine `feat:` commit), it just won't get minor automatically re-applied just because the branch name still matches.
+Both `branch_rules` and `commit_rules` re-evaluate on every push, so a branch like `feature/xyz` matching `^feature/ → minor` (or a later commit matching `commit_rules` as `minor`) keeps producing `minor` bumps on *every* push — even later pushes that just add more work to the same already-classified feature. Set `force_patch_after_first_push: true` in `semantic-ops.yml` to make every push **after** a branch's first one an unconditional `patch` bump — completely ignoring what the branch name or commit messages say. Only the branch's genuine first push (before it has produced any tag of its own) resolves normally, via `branch_rules`/`commit_rules`/`precedence`/`default_bump` exactly as today.
 
-This is determined from git history, not "does the branch ref exist yet" — specifically so a failed pipeline run doesn't cause a problem: if a branch's first push computes a version but a later step (`typecheck`/`test`/`build`/`release`) fails before a tag is ever created, a retry push still correctly gets `branch_rules` applied, since no tag was actually produced yet. Concretely, it checks whether any tag reachable from the current commit is *not* also reachable from where this branch forked off `main_branch` — i.e. a tag created specifically on this branch's own history, not one that already existed on `main` before the branch diverged.
+This is determined from git history, not "does the branch ref exist yet" — specifically so a failed pipeline run doesn't cause a problem: if a branch's first push computes a version but a later step (`typecheck`/`test`/`build`/`release`) fails before a tag is ever created, a retry push still correctly resolves normally, since no tag was actually produced yet. Concretely, it checks whether any tag reachable from the current commit is *not* also reachable from where this branch forked off `main_branch` — i.e. a tag created specifically on this branch's own history, not one that already existed on `main` before the branch diverged.
 
-This never restricts `main_branch` — `branch_rules` always stays active there, regardless of this setting, since `main` is never a "first push only" concern.
+This never restricts `main_branch` — it always resolves normally there, regardless of this setting, since `main` is never a "first push only" concern.
 
 ## Configuration (`semantic-ops.yml`)
 
@@ -196,7 +196,7 @@ default_postfix: ""          # fallback postfix for branches matching neither ma
 initial_version: "1.0.0"     # first release on a channel with no prior tag -- used as-is, no update applied
 create_release: true         # false = tag only, no GitHub Release (see "Tag-only mode" below)
 release_branch_rules: []     # non-empty = only release on branches matching one of these patterns (see "Branch-gated release" below)
-branch_rules_first_push_only: false   # true = branch_rules only applies on a branch's first push (see "Freeze branch-name classification" below); never restricts main_branch
+force_patch_after_first_push: false   # true = every push after a branch's first one is forced to patch, ignoring branch_rules/commit_rules (see "Force patch on every push after the first" below); never restricts main_branch
 
 branch_rules:                  # update signal from branch name — patterns grouped by level, highest matching level wins
   major:

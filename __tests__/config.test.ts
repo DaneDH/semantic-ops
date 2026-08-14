@@ -12,7 +12,7 @@ describe('parseConfig', () => {
     expect(cfg.initial_version).toBe('1.0.0');
     expect(cfg.create_release).toBe(true);
     expect(cfg.release_branch_rules).toEqual([]);
-    expect(cfg.branch_rules_first_push_only).toBe(false);
+    expect(cfg.force_patch_after_first_push).toBe(false);
     expect(cfg.branch_rules).toEqual({ major: [], minor: [], patch: [] });
     expect(cfg.commit_rules).toEqual({ major: [], minor: [], patch: [] });
     expect(cfg.branch_postfix_rules).toEqual([]);
@@ -76,8 +76,8 @@ describe('parseConfig', () => {
     );
   });
 
-  it('accepts an explicit branch_rules_first_push_only: true', () => {
-    const cfg = parseConfig({ branch_rules_first_push_only: true });
-    expect(cfg.branch_rules_first_push_only).toBe(true);
+  it('accepts an explicit force_patch_after_first_push: true', () => {
+    const cfg = parseConfig({ force_patch_after_first_push: true });
+    expect(cfg.force_patch_after_first_push).toBe(true);
   });
 });
