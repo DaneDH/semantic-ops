@@ -58,14 +58,15 @@ export const ConfigSchema = z.object({
   // today's behavior. Never affects tagging, which always happens
   // regardless of this field.
   release_branch_rules: z.array(regexPattern).default([]),
-  // When true, branch_rules only classifies a branch's bump on the push
-  // that created it -- later pushes to that same (already-existing)
-  // branch fall through to commit_rules/default_bump instead, so
-  // repeated work on one feature branch doesn't keep re-bumping minor
-  // just because the branch name matches every time. Never applies to
-  // main_branch, which always keeps branch_rules active. Default false
-  // preserves today's behavior (branch_rules always active).
-  branch_rules_first_push_only: z.boolean().default(false),
+  // When true, only a branch's first push (before it has produced any tag
+  // of its own) resolves normally via branch_rules/commit_rules/
+  // default_bump. Every push after that is unconditionally forced to
+  // "patch" -- regardless of what the branch name or commit messages say
+  // -- so repeated work on one feature branch doesn't keep re-bumping
+  // minor/major just because it still matches a rule. Never applies to
+  // main_branch, which always resolves normally. Default false preserves
+  // today's behavior (branch_rules/commit_rules always active).
+  force_patch_after_first_push: z.boolean().default(false),
   branch_rules: BumpRuleSet.default({}),
   commit_rules: BumpRuleSet.default({}),
   branch_postfix_rules: z.array(PostfixRule).default([]),

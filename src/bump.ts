@@ -46,15 +46,8 @@ export function resolveBump(
   branchName: string,
   commitMessages: string[],
   config: SemanticOpsConfig,
-  /**
-   * Whether branch_rules should be consulted at all for this run. Set
-   * false to make a branch's name-based classification apply only once
-   * (its first push) -- see branch_rules_first_push_only. Defaults to
-   * true so existing callers/tests are unaffected.
-   */
-  branchRulesActive = true,
 ): BumpType {
-  const branchBump = branchRulesActive ? matchBranchRules(branchName, config.branch_rules) : null;
+  const branchBump = matchBranchRules(branchName, config.branch_rules);
   const commitBump = matchCommitRules(commitMessages, config.commit_rules);
 
   if (branchBump && commitBump) {

@@ -1,4 +1,5 @@
 import * as core from '@actions/core';
+import { BumpType } from './config.schema';
 import { loadConfig } from './config';
 import { resolvePostfix } from './postfix';
 import { findBaselineTag } from './baseline';
@@ -89,27 +90,29 @@ async function runCompute(): Promise<void> {
   const commitMessages =
     prCommitMessages ?? (await getCommitMessagesSince(baseline ? `${config.tag_prefix}${baseline.raw}` : null));
 
-  // branch_rules_first_push_only: once a branch has already produced a tag
-  // of its own, its name-based classification (e.g. "feature/" -> minor)
-  // shouldn't keep re-firing on every later push to the same branch --
-  // only commit_rules/default_bump should drive subsequent pushes. Checked
-  // via git history (has this branch ever been tagged), not the push
-  // event's ref-creation flag -- that flag alone would wrongly treat a
+  // force_patch_after_first_push: once a branch has already produced a tag
+  // of its own, every later push to it is unconditionally "patch" --
+  // branch_rules and commit_rules are both bypassed entirely, regardless
+  // of what the branch name or commit messages say. Only the branch's
+  // genuine first push (no tag yet) resolves normally. Checked via git
+  // history (has this branch ever been tagged), not the push event's
+  // ref-creation flag -- that flag alone would wrongly treat a
   // retry-after-failure push as "already existed" even though no tag was
   // ever actually created for it. Never restricts main_branch, which
-  // always keeps branch_rules active.
-  let branchRulesActive = true;
-  if (config.branch_rules_first_push_only && currentBranch !== config.main_branch) {
-    const alreadyTagged = await hasBranchAlreadyBeenTagged(config.main_branch);
-    branchRulesActive = !alreadyTagged;
-    if (!branchRulesActive) {
-      core.info(
-        `branch_rules_first_push_only is enabled and "${currentBranch}" already has a tag of its own -- skipping branch_rules, using commit_rules/default_bump only.`,
-      );
-    }
+  // always resolves normally.
+  let bumpType: BumpType;
+  if (
+    config.force_patch_after_first_push &&
+    currentBranch !== config.main_branch &&
+    (await hasBranchAlreadyBeenTagged(config.main_branch))
+  ) {
+    bumpType = 'patch';
+    core.info(
+      `force_patch_after_first_push is enabled and "${currentBranch}" already has a tag of its own -- forcing patch, ignoring branch_rules and commit_rules.`,
+    );
+  } else {
+    bumpType = resolveBump(bumpBranch, commitMessages, config);
   }
-
-  const bumpType = resolveBump(bumpBranch, commitMessages, config, branchRulesActive);
   core.info(`Resolved update type: ${bumpType}`);
 
   const version = computeNextVersion(baseline, bumpType, postfix, config.initial_version);
