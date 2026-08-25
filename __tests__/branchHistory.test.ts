@@ -9,68 +9,53 @@ vi.mock('@actions/exec', () => ({
 import { hasBranchAlreadyBeenTagged } from '../src/branchHistory';
 import { GitError } from '../src/commits';
 
+const SEP = '\x00';
+
 beforeEach(() => {
   getExecOutputMock.mockReset();
 });
 
-function mockGit(handlers: Record<string, { exitCode: number; stdout?: string; stderr?: string }>) {
+function mockForEachRef(exitCode: number, messages: string[] | string) {
+  const stdout = Array.isArray(messages) ? messages.map((m) => `${m}${SEP}`).join('') : messages;
   getExecOutputMock.mockImplementation(async (_cmd: string, args: string[]) => {
-    const key = args.join(' ');
-    const match = Object.entries(handlers).find(([pattern]) => key.includes(pattern));
-    if (!match) throw new Error(`Unexpected git invocation in test: git ${key}`);
-    const [, response] = match;
-    return { exitCode: response.exitCode, stdout: response.stdout ?? '', stderr: response.stderr ?? '' };
+    if (args[0] !== 'for-each-ref') throw new Error(`Unexpected git invocation in test: git ${args.join(' ')}`);
+    return { exitCode, stdout, stderr: exitCode === 0 ? '' : 'boom' };
   });
 }
 
 describe('hasBranchAlreadyBeenTagged', () => {
-  it('returns false when no tag is unique to this branch (never tagged before)', async () => {
-    mockGit({
-      'merge-base origin/main HEAD': { exitCode: 0, stdout: 'basesha123\n' },
-      'tag --merged HEAD': { exitCode: 0, stdout: 'v1.0.0\nv1.1.0\n' },
-      'tag --merged basesha123': { exitCode: 0, stdout: 'v1.0.0\nv1.1.0\n' },
-    });
+  it('returns true when a tag message ends with a matching branch_name marker', async () => {
+    mockForEachRef(0, ['v1.0.0\n\nSome release notes.\n\nbranch_name: [feature/thing]']);
 
-    expect(await hasBranchAlreadyBeenTagged('main')).toBe(false);
+    expect(await hasBranchAlreadyBeenTagged('feature/thing')).toBe(true);
   });
 
-  it('returns true when a tag reachable from HEAD is not reachable from the fork point', async () => {
-    mockGit({
-      'merge-base origin/main HEAD': { exitCode: 0, stdout: 'basesha123\n' },
-      'tag --merged HEAD': { exitCode: 0, stdout: 'v1.0.0\nv1.1.0-beta\n' },
-      'tag --merged basesha123': { exitCode: 0, stdout: 'v1.0.0\n' },
-    });
+  it('returns false when tags exist but none match this branch', async () => {
+    mockForEachRef(0, [
+      'v1.0.0\n\nbranch_name: [main]',
+      'v1.1.0-beta\n\nbranch_name: [feature/other]',
+    ]);
 
-    expect(await hasBranchAlreadyBeenTagged('main')).toBe(true);
+    expect(await hasBranchAlreadyBeenTagged('feature/thing')).toBe(false);
   });
 
-  it('falls back to a plain local branch name if origin/<mainBranch> does not resolve', async () => {
-    mockGit({
-      'merge-base origin/main HEAD': { exitCode: 128, stderr: 'unknown revision' },
-      'merge-base main HEAD': { exitCode: 0, stdout: 'basesha456\n' },
-      'tag --merged HEAD': { exitCode: 0, stdout: '' },
-      'tag --merged basesha456': { exitCode: 0, stdout: '' },
-    });
+  it('does not match when the marker text appears mid-message rather than as the last line', async () => {
+    mockForEachRef(0, [
+      'v1.0.0\n\nA commit mentioned branch_name: [feature/thing] in its body.\n\nbranch_name: [main]',
+    ]);
 
-    expect(await hasBranchAlreadyBeenTagged('main')).toBe(false);
+    expect(await hasBranchAlreadyBeenTagged('feature/thing')).toBe(false);
   });
 
-  it('throws a GitError when neither origin/<mainBranch> nor <mainBranch> resolve', async () => {
-    mockGit({
-      'merge-base origin/main HEAD': { exitCode: 128, stderr: 'unknown revision' },
-      'merge-base main HEAD': { exitCode: 128, stderr: 'unknown revision' },
-    });
+  it('returns false when there are no tags at all', async () => {
+    mockForEachRef(0, '');
 
-    await expect(hasBranchAlreadyBeenTagged('main')).rejects.toThrow(GitError);
+    expect(await hasBranchAlreadyBeenTagged('feature/thing')).toBe(false);
   });
 
-  it('throws a GitError when listing merged tags fails', async () => {
-    mockGit({
-      'merge-base origin/main HEAD': { exitCode: 0, stdout: 'basesha123\n' },
-      'tag --merged HEAD': { exitCode: 1, stderr: 'boom' },
-      'tag --merged basesha123': { exitCode: 0, stdout: '' },
-    });
+  it('throws a GitError when listing tag messages fails', async () => {
+    mockForEachRef(1, '');
 
-    await expect(hasBranchAlreadyBeenTagged('main')).rejects.toThrow(GitError);
+    await expect(hasBranchAlreadyBeenTagged('feature/thing')).rejects.toThrow(GitError);
   });
 });

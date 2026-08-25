@@ -31,6 +31,7 @@ const baseParams = {
   sha: 'abc123',
   version: '1.0.0',
   prerelease: false,
+  branchName: 'feature/thing',
 };
 
 describe('createTagAndRelease', () => {
@@ -56,7 +57,7 @@ describe('createTagAndRelease', () => {
     expect(result).toEqual({ releaseId: null, releaseUrl: null });
   });
 
-  it('leads the tag message with the tag name, then the body, when a body is given', async () => {
+  it('leads the tag message with the tag name, then the body, then a branch_name trailer, when a body is given', async () => {
     const { octokit, createTag } = makeOctokit();
 
     await createTagAndRelease(octokit as any, {
@@ -66,16 +67,28 @@ describe('createTagAndRelease', () => {
     });
 
     expect(createTag).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'v1.0.0\n\nfeat: add thing\n\nFull body here.' }),
+      expect.objectContaining({
+        message: 'v1.0.0\n\nfeat: add thing\n\nFull body here.\n\nbranch_name: [feature/thing]',
+      }),
     );
   });
 
-  it('falls back to the tag name as the tag message when no body is given', async () => {
+  it('falls back to the tag name plus a branch_name trailer as the tag message when no body is given', async () => {
     const { octokit, createTag } = makeOctokit();
 
     await createTagAndRelease(octokit as any, { ...baseParams, createRelease: false });
 
-    expect(createTag).toHaveBeenCalledWith(expect.objectContaining({ message: 'v1.0.0' }));
+    expect(createTag).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'v1.0.0\n\nbranch_name: [feature/thing]' }),
+    );
+  });
+
+  it('never includes the branch_name trailer in the Release body', async () => {
+    const { octokit, createRelease } = makeOctokit();
+
+    await createTagAndRelease(octokit as any, { ...baseParams, body: 'feat: add thing' });
+
+    expect(createRelease).toHaveBeenCalledWith(expect.objectContaining({ body: 'feat: add thing' }));
   });
 
   it('throws ReleaseError instead of overwriting an existing tag', async () => {

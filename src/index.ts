@@ -94,17 +94,17 @@ async function runCompute(): Promise<void> {
   // of its own, every later push to it is unconditionally "patch" --
   // branch_rules and commit_rules are both bypassed entirely, regardless
   // of what the branch name or commit messages say. Only the branch's
-  // genuine first push (no tag yet) resolves normally. Checked via git
-  // history (has this branch ever been tagged), not the push event's
-  // ref-creation flag -- that flag alone would wrongly treat a
-  // retry-after-failure push as "already existed" even though no tag was
-  // ever actually created for it. Never restricts main_branch, which
-  // always resolves normally.
+  // genuine first push (no tag yet) resolves normally. Checked by looking
+  // for a "branch_name: [...]" marker this branch's own tags carry (see
+  // branchHistory.ts/release.ts), not the push event's ref-creation flag --
+  // that flag alone would wrongly treat a retry-after-failure push as
+  // "already existed" even though no tag was ever actually created for it.
+  // Never restricts main_branch, which always resolves normally.
   let bumpType: BumpType;
   if (
     config.force_patch_after_first_push &&
     currentBranch !== config.main_branch &&
-    (await hasBranchAlreadyBeenTagged(config.main_branch))
+    (await hasBranchAlreadyBeenTagged(currentBranch))
   ) {
     bumpType = 'patch';
     core.info(
@@ -176,6 +176,7 @@ async function runRelease(): Promise<void> {
     sha,
     version,
     prerelease,
+    branchName,
     body,
     createRelease,
   });
