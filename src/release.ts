@@ -11,6 +11,10 @@ export interface CreateTagAndReleaseParams {
   sha: string;
   version: string;
   prerelease: boolean;
+  /** Branch this tag was created from -- stamped into the tag's own message so
+   * hasBranchAlreadyBeenTagged() can later identify it by name instead of by
+   * commit-graph ancestry (see branchHistory.ts). */
+  branchName: string;
   /** Release description. Falls back to GitHub's auto-generated notes when omitted. */
   body?: string;
   /**
@@ -50,7 +54,7 @@ export async function createTagAndRelease(
   octokit: Octokit,
   params: CreateTagAndReleaseParams,
 ): Promise<CreateTagAndReleaseResult> {
-  const { owner, repo, tagName, sha, version, prerelease, body, createRelease = true } = params;
+  const { owner, repo, tagName, sha, version, prerelease, branchName, body, createRelease = true } = params;
 
   if (await tagRefExists(octokit, owner, repo, tagName)) {
     throw new ReleaseError(
@@ -58,6 +62,17 @@ export async function createTagAndRelease(
         'this usually means no new update-worthy commits have landed since the last release on this channel.',
     );
   }
+
+  // The trailing "branch_name: [...]" line is machine-readable metadata for
+  // hasBranchAlreadyBeenTagged() (branchHistory.ts) -- it identifies the tag
+  // by name lookup instead of commit-graph ancestry, which breaks under a
+  // rebase/force-push. It's appended to the TAG's own message only, never to
+  // the Release body below, so it never appears on the Release page a human
+  // reads. It's always the message's last line specifically so a lookup can
+  // require an exact last-line match rather than a substring search -- body
+  // may itself contain arbitrary commit text, and this keeps that text from
+  // being mistaken for the marker.
+  const branchTrailer = `branch_name: [${branchName}]`;
 
   const tagObject = await octokit.rest.git.createTag({
     owner,
@@ -71,7 +86,7 @@ export async function createTagAndRelease(
     // giving a clean heading AND full detail below, even with no Release
     // object (which matters most when create_release is false, since the
     // tag is the only place this content can live at all).
-    message: body ? `${tagName}\n\n${body}` : tagName,
+    message: body ? `${tagName}\n\n${body}\n\n${branchTrailer}` : `${tagName}\n\n${branchTrailer}`,
     object: sha,
     type: 'commit',
   });

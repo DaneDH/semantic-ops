@@ -41,6 +41,8 @@ This is purely additive and never a hard requirement: if no `github_token` is av
 
 ## Usage
 
+This example is a trimmed, generic version of [.github/workflows/release.yml](.github/workflows/release.yml) — this repo dogfoods itself, so that file is a complete, currently-working copy of this exact workflow, not just a snippet; worth checking directly if you want to see it running for real.
+
 ```yaml
 name: Release
 
@@ -49,11 +51,34 @@ on:
     branches: ['**']
 
 jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # ... set up your toolchain ...
+      - run: npm run typecheck
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # ... set up your toolchain ...
+      - run: npm test
+
+  build:
+    needs: [typecheck, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # ... set up your toolchain ...
+      - run: npm run build
+      # ... upload/publish your build artifact ...
+
   version:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read   # optional: lets compute mode resolve branch/commits from the merging PR
+      pull-requests: read   # lets compute mode resolve branch/commits from the merging PR, regardless of merge strategy
     outputs:
       tag_name: ${{ steps.version.outputs.tag_name }}
       version: ${{ steps.version.outputs.version }}
@@ -65,7 +90,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # required: full history + tags must be available locally
+          fetch-depth: 0   # required: compute mode reads tags and commit history locally via git
 
       - id: version
         uses: your-org/semantic-ops@v1
@@ -73,18 +98,8 @@ jobs:
           mode: compute
           config_path: semantic-ops.yml   # default
 
-      - run: echo "Building ${{ steps.version.outputs.version }} (build ${{ steps.version.outputs.build_number }})"
-
-  deploy:
-    needs: version
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "Deploying ${{ needs.version.outputs.version }}"
-      # ... real build/deploy steps ...
-      # if this job fails, the release job below never runs, and the repo is never tagged
-
   release:
-    needs: [version, deploy]
+    needs: [typecheck, test, build, version]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -101,9 +116,15 @@ jobs:
           postfix: ${{ needs.version.outputs.postfix }}
           previous_version: ${{ needs.version.outputs.previous_version }}
           commit_messages: ${{ needs.version.outputs.commit_messages }}
+          # create_release is intentionally NOT passed here -- release mode
+          # reads it directly from semantic-ops.yml (config's create_release
+          # field), so it can't be silently ignored if this step forgot to
+          # wire it through.
 ```
 
 `actions/checkout` must run with `fetch-depth: 0` (or otherwise fetch full history and tags) before the `compute`-mode step — it reads tags and commit history from the local checkout via `git`, not the GitHub API, so a shallow clone will cause it to fail with a clear error.
+
+Gating `version`/`release` on `needs: [typecheck, test, build]` (rather than tagging immediately) means a broken build never gets tagged — nothing computes or creates a version until the checks that matter to you have already passed.
 
 ## Inputs
 
@@ -140,6 +161,12 @@ jobs:
 | `release_url` | `release` | `https://github.com/org/repo/releases/tag/v1.33.0-alpha` | HTML URL of the created Release. Empty if `create_release` was `false`. |
 
 `mode: release` fails loudly if the tag already exists, rather than overwriting it. If `bump_type` is provided, the Release body is built from `bump_type`/`postfix`/`previous_version`/`commit_messages` — listing the update rationale and the exact commits that were scanned to produce it, which is more specific than GitHub's generic auto-generated notes. If `bump_type` is omitted, the Release falls back to `generate_release_notes: true`. That same content also becomes the annotated tag's own message, with the tag name on its own first line and the release notes following after a blank line — so clicking into a specific tag/release shows a clean heading (just the version) *and* full detail below, even with no Release object attached (which matters most when `create_release` is `false`, since the tag is the only place this content can live at all). GitHub's bare-tag view smushes the heading into `{tag}: {first line of message}` whenever that first line differs from the tag name — leading with the tag name itself avoids that.
+
+The annotated tag's message carries one further line beyond what's described above: a trailing `branch_name: [<branch>]` marker, identifying the branch this tag was created from. It's machine-readable metadata for `force_patch_after_first_push` (below) — it never appears in the Release body a human reads, only in the tag object itself. Because of this, semantic-ops needs to own the tag message format for that feature to work correctly; don't hand-create tags for branches you want it to track.
+
+That exact format, `branch_name: [<branch>]`, and its position as the message's literal last line, are both load-bearing for `force_patch_after_first_push` — not cosmetic. Get either wrong and the feature doesn't degrade gracefully or fail loudly; it silently produces the wrong version (a `minor`/`major` bump where `patch` was expected), with nothing in the logs pointing at why.
+
+Leave tag creation entirely to semantic-ops — don't hand-create tags, and don't run any later step that rewrites the tag's annotated message (a signing step, a changelog-append step, anything that re-creates/re-annotates the same tag object) — and this works correctly with no extra effort. Deviate from that, and reconciling the inconsistency becomes your own pipeline's responsibility: semantic-ops has no way to detect or warn that the marker was moved or lost, it will just silently stop treating the branch as already-tagged on the next push.
 
 ### Tag-only mode (`create_release: false`)
 
@@ -181,9 +208,30 @@ This is deliberately a simple, coarse gate: it matches against the plain current
 
 Both `branch_rules` and `commit_rules` re-evaluate on every push, so a branch like `feature/xyz` matching `^feature/ → minor` (or a later commit matching `commit_rules` as `minor`) keeps producing `minor` bumps on *every* push — even later pushes that just add more work to the same already-classified feature. Set `force_patch_after_first_push: true` in `semantic-ops.yml` to make every push **after** a branch's first one an unconditional `patch` bump — completely ignoring what the branch name or commit messages say. Only the branch's genuine first push (before it has produced any tag of its own) resolves normally, via `branch_rules`/`commit_rules`/`precedence`/`default_bump` exactly as today.
 
-This is determined from git history, not "does the branch ref exist yet" — specifically so a failed pipeline run doesn't cause a problem: if a branch's first push computes a version but a later step (`typecheck`/`test`/`build`/`release`) fails before a tag is ever created, a retry push still correctly resolves normally, since no tag was actually produced yet. Concretely, it checks whether any tag reachable from the current commit is *not* also reachable from where this branch forked off `main_branch` — i.e. a tag created specifically on this branch's own history, not one that already existed on `main` before the branch diverged.
+"Has this branch produced a tag of its own" is determined by a `branch_name: [<branch>]` marker semantic-ops stamps into the tag's own message at creation time (see above) — a direct name lookup, not a walk of commit-graph ancestry. An ancestry-based check (does the branch's history contain a tag not shared with `main`) was the original approach and was replaced: it silently breaks the moment a tagged commit stops being an ancestor of the branch's current tip, which a routine rebase/amend + force-push causes. This is also, incidentally, why the check isn't "does the branch ref exist yet": if a branch's first push computes a version but a later step (`typecheck`/`test`/`build`/`release`) fails before a tag is ever created, a retry push still correctly resolves normally, since no tag was actually produced yet — the marker's absence, not the branch's age, is what's being checked.
+
+Because of this, tags created before upgrading to this behavior won't carry the marker yet: the very next push to an already-tagged branch will be treated once more as a "first push" (normal rule resolution, not forced patch), and every push after that self-heals, since the tag it produces carries the marker.
 
 This never restricts `main_branch` — it always resolves normally there, regardless of this setting, since `main` is never a "first push only" concern.
+
+**Example.** Given:
+
+```yaml
+force_patch_after_first_push: true
+branch_rules:
+  minor:
+    - '^feature/'
+```
+
+On `feature/thing`, starting from no tags on the `beta` channel yet:
+
+| Push | `branch_rules` says | Tag already exists for this branch? | Resolved `bump_type` | Resulting tag |
+|---|---|---|---|---|
+| 1st | `minor` (matches `^feature/`) | No | `minor` (resolved normally) | `v1.1.0-beta`, stamped `branch_name: [feature/thing]` |
+| 2nd | `minor` (still matches) | Yes (marker found) | `patch` (forced, `branch_rules` ignored) | `v1.1.1-beta` |
+| 3rd | `minor` (still matches) | Yes | `patch` (forced) | `v1.1.2-beta` |
+
+No workflow changes are needed for this — it's driven entirely by `semantic-ops.yml`; the `version`/`release` steps in [Usage](#usage) above work as-is.
 
 ## Configuration (`semantic-ops.yml`)
 

@@ -1,40 +1,26 @@
 import { getExecOutput } from '@actions/exec';
 import { GitError } from './commits';
 
-async function findMergeBase(mainBranch: string): Promise<string> {
-  // Prefer the remote-tracking ref (present after actions/checkout with
-  // fetch-depth: 0); fall back to a plain local branch name for local/dry-run
-  // use where there may be no "origin" remote at all.
-  for (const ref of [`origin/${mainBranch}`, mainBranch]) {
-    const result = await getExecOutput('git', ['merge-base', ref, 'HEAD'], {
-      silent: true,
-      ignoreReturnCode: true,
-    });
-    if (result.exitCode === 0) {
-      return result.stdout.trim();
-    }
-  }
+/**
+ * NUL-delimited so multi-line tag messages/bodies split cleanly -- tag
+ * content can contain anything except NUL, so this is safe as a separator
+ * where a plain newline wouldn't be.
+ */
+const TAG_MESSAGE_SEPARATOR = '\x00';
 
-  throw new GitError(
-    `Could not find a merge base between "${mainBranch}" and HEAD. ` +
-      'Ensure actions/checkout uses fetch-depth: 0 so main_branch\'s full history is available locally.',
+async function allTagMessages(): Promise<string[]> {
+  const result = await getExecOutput(
+    'git',
+    ['for-each-ref', 'refs/tags', `--format=%(contents)${TAG_MESSAGE_SEPARATOR}`],
+    { silent: true, ignoreReturnCode: true },
   );
-}
-
-async function tagsMergedInto(ref: string): Promise<Set<string>> {
-  const result = await getExecOutput('git', ['tag', '--merged', ref], {
-    silent: true,
-    ignoreReturnCode: true,
-  });
   if (result.exitCode !== 0) {
-    throw new GitError(`"git tag --merged ${ref}" failed: ${result.stderr.trim()}`);
+    throw new GitError(`"git for-each-ref refs/tags" failed: ${result.stderr.trim()}`);
   }
-  return new Set(
-    result.stdout
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0),
-  );
+  return result.stdout
+    .split(TAG_MESSAGE_SEPARATOR)
+    .map((message) => message.trim())
+    .filter((message) => message.length > 0);
 }
 
 /**
@@ -42,21 +28,27 @@ async function tagsMergedInto(ref: string): Promise<Set<string>> {
  * branch ref itself is "new". Those two differ exactly when a branch's first
  * push succeeds through compute but a later step (typecheck/test/build/
  * release) fails before a tag is created: the branch ref already exists on
- * retry, but no tag has ever actually been made for it. Answered by finding
- * where this branch forked from main_branch, then checking whether any tag
- * reachable from HEAD is NOT also reachable from that fork point -- i.e. a
- * tag created specifically on this branch's own history, not one that
- * already existed on main before this branch diverged.
+ * retry, but no tag has ever actually been made for it.
+ *
+ * Answered by a direct marker, not commit-graph ancestry: every tag this
+ * tool creates has its source branch stamped as the LAST line of its
+ * annotated message, `branch_name: [<branch>]` (see release.ts). Matching
+ * only that exact last line -- rather than searching the whole message --
+ * keeps this immune to a branch name coincidentally appearing inside a
+ * commit message embedded earlier in the tag's body.
+ *
+ * An ancestry-based check (does the branch's git history contain a tag not
+ * shared with main) was tried first and discarded: it silently breaks the
+ * moment a tagged commit stops being an ancestor of the branch's current
+ * tip, which happens after any rebase/amend + force-push on the branch --
+ * exactly the kind of thing active feature branches do routinely.
  */
-export async function hasBranchAlreadyBeenTagged(mainBranch: string): Promise<boolean> {
-  const mergeBase = await findMergeBase(mainBranch);
-  const [tagsAtHead, tagsAtMergeBase] = await Promise.all([
-    tagsMergedInto('HEAD'),
-    tagsMergedInto(mergeBase),
-  ]);
-
-  for (const tag of tagsAtHead) {
-    if (!tagsAtMergeBase.has(tag)) return true;
-  }
-  return false;
+export async function hasBranchAlreadyBeenTagged(branchName: string): Promise<boolean> {
+  const marker = `branch_name: [${branchName}]`;
+  const messages = await allTagMessages();
+  return messages.some((message) => {
+    const lines = message.split('\n').map((line) => line.trim());
+    const lastNonEmpty = [...lines].reverse().find((line) => line.length > 0);
+    return lastNonEmpty === marker;
+  });
 }

@@ -36904,57 +36904,50 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.hasBranchAlreadyBeenTagged = hasBranchAlreadyBeenTagged;
 const exec_1 = __nccwpck_require__(5236);
 const commits_1 = __nccwpck_require__(5477);
-async function findMergeBase(mainBranch) {
-    // Prefer the remote-tracking ref (present after actions/checkout with
-    // fetch-depth: 0); fall back to a plain local branch name for local/dry-run
-    // use where there may be no "origin" remote at all.
-    for (const ref of [`origin/${mainBranch}`, mainBranch]) {
-        const result = await (0, exec_1.getExecOutput)('git', ['merge-base', ref, 'HEAD'], {
-            silent: true,
-            ignoreReturnCode: true,
-        });
-        if (result.exitCode === 0) {
-            return result.stdout.trim();
-        }
-    }
-    throw new commits_1.GitError(`Could not find a merge base between "${mainBranch}" and HEAD. ` +
-        'Ensure actions/checkout uses fetch-depth: 0 so main_branch\'s full history is available locally.');
-}
-async function tagsMergedInto(ref) {
-    const result = await (0, exec_1.getExecOutput)('git', ['tag', '--merged', ref], {
-        silent: true,
-        ignoreReturnCode: true,
-    });
+/**
+ * NUL-delimited so multi-line tag messages/bodies split cleanly -- tag
+ * content can contain anything except NUL, so this is safe as a separator
+ * where a plain newline wouldn't be.
+ */
+const TAG_MESSAGE_SEPARATOR = '\x00';
+async function allTagMessages() {
+    const result = await (0, exec_1.getExecOutput)('git', ['for-each-ref', 'refs/tags', `--format=%(contents)${TAG_MESSAGE_SEPARATOR}`], { silent: true, ignoreReturnCode: true });
     if (result.exitCode !== 0) {
-        throw new commits_1.GitError(`"git tag --merged ${ref}" failed: ${result.stderr.trim()}`);
+        throw new commits_1.GitError(`"git for-each-ref refs/tags" failed: ${result.stderr.trim()}`);
     }
-    return new Set(result.stdout
-        .split('\n')
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0));
+    return result.stdout
+        .split(TAG_MESSAGE_SEPARATOR)
+        .map((message) => message.trim())
+        .filter((message) => message.length > 0);
 }
 /**
  * Whether this branch has ever produced a tag of its own -- not whether the
  * branch ref itself is "new". Those two differ exactly when a branch's first
  * push succeeds through compute but a later step (typecheck/test/build/
  * release) fails before a tag is created: the branch ref already exists on
- * retry, but no tag has ever actually been made for it. Answered by finding
- * where this branch forked from main_branch, then checking whether any tag
- * reachable from HEAD is NOT also reachable from that fork point -- i.e. a
- * tag created specifically on this branch's own history, not one that
- * already existed on main before this branch diverged.
+ * retry, but no tag has ever actually been made for it.
+ *
+ * Answered by a direct marker, not commit-graph ancestry: every tag this
+ * tool creates has its source branch stamped as the LAST line of its
+ * annotated message, `branch_name: [<branch>]` (see release.ts). Matching
+ * only that exact last line -- rather than searching the whole message --
+ * keeps this immune to a branch name coincidentally appearing inside a
+ * commit message embedded earlier in the tag's body.
+ *
+ * An ancestry-based check (does the branch's git history contain a tag not
+ * shared with main) was tried first and discarded: it silently breaks the
+ * moment a tagged commit stops being an ancestor of the branch's current
+ * tip, which happens after any rebase/amend + force-push on the branch --
+ * exactly the kind of thing active feature branches do routinely.
  */
-async function hasBranchAlreadyBeenTagged(mainBranch) {
-    const mergeBase = await findMergeBase(mainBranch);
-    const [tagsAtHead, tagsAtMergeBase] = await Promise.all([
-        tagsMergedInto('HEAD'),
-        tagsMergedInto(mergeBase),
-    ]);
-    for (const tag of tagsAtHead) {
-        if (!tagsAtMergeBase.has(tag))
-            return true;
-    }
-    return false;
+async function hasBranchAlreadyBeenTagged(branchName) {
+    const marker = `branch_name: [${branchName}]`;
+    const messages = await allTagMessages();
+    return messages.some((message) => {
+        const lines = message.split('\n').map((line) => line.trim());
+        const lastNonEmpty = [...lines].reverse().find((line) => line.length > 0);
+        return lastNonEmpty === marker;
+    });
 }
 
 
@@ -37456,16 +37449,16 @@ async function runCompute() {
     // of its own, every later push to it is unconditionally "patch" --
     // branch_rules and commit_rules are both bypassed entirely, regardless
     // of what the branch name or commit messages say. Only the branch's
-    // genuine first push (no tag yet) resolves normally. Checked via git
-    // history (has this branch ever been tagged), not the push event's
-    // ref-creation flag -- that flag alone would wrongly treat a
-    // retry-after-failure push as "already existed" even though no tag was
-    // ever actually created for it. Never restricts main_branch, which
-    // always resolves normally.
+    // genuine first push (no tag yet) resolves normally. Checked by looking
+    // for a "branch_name: [...]" marker this branch's own tags carry (see
+    // branchHistory.ts/release.ts), not the push event's ref-creation flag --
+    // that flag alone would wrongly treat a retry-after-failure push as
+    // "already existed" even though no tag was ever actually created for it.
+    // Never restricts main_branch, which always resolves normally.
     let bumpType;
     if (config.force_patch_after_first_push &&
         currentBranch !== config.main_branch &&
-        (await (0, branchHistory_1.hasBranchAlreadyBeenTagged)(config.main_branch))) {
+        (await (0, branchHistory_1.hasBranchAlreadyBeenTagged)(currentBranch))) {
         bumpType = 'patch';
         core.info(`force_patch_after_first_push is enabled and "${currentBranch}" already has a tag of its own -- forcing patch, ignoring branch_rules and commit_rules.`);
     }
@@ -37523,6 +37516,7 @@ async function runRelease() {
         sha,
         version,
         prerelease,
+        branchName,
         body,
         createRelease,
     });
@@ -37679,11 +37673,21 @@ async function tagRefExists(octokit, owner, repo, tagName) {
     }
 }
 async function createTagAndRelease(octokit, params) {
-    const { owner, repo, tagName, sha, version, prerelease, body, createRelease = true } = params;
+    const { owner, repo, tagName, sha, version, prerelease, branchName, body, createRelease = true } = params;
     if (await tagRefExists(octokit, owner, repo, tagName)) {
         throw new ReleaseError(`Tag "${tagName}" already exists. semantic-ops will not overwrite an existing tag -- ` +
             'this usually means no new update-worthy commits have landed since the last release on this channel.');
     }
+    // The trailing "branch_name: [...]" line is machine-readable metadata for
+    // hasBranchAlreadyBeenTagged() (branchHistory.ts) -- it identifies the tag
+    // by name lookup instead of commit-graph ancestry, which breaks under a
+    // rebase/force-push. It's appended to the TAG's own message only, never to
+    // the Release body below, so it never appears on the Release page a human
+    // reads. It's always the message's last line specifically so a lookup can
+    // require an exact last-line match rather than a substring search -- body
+    // may itself contain arbitrary commit text, and this keeps that text from
+    // being mistaken for the marker.
+    const branchTrailer = `branch_name: [${branchName}]`;
     const tagObject = await octokit.rest.git.createTag({
         owner,
         repo,
@@ -37696,7 +37700,7 @@ async function createTagAndRelease(octokit, params) {
         // giving a clean heading AND full detail below, even with no Release
         // object (which matters most when create_release is false, since the
         // tag is the only place this content can live at all).
-        message: body ? `${tagName}\n\n${body}` : tagName,
+        message: body ? `${tagName}\n\n${body}\n\n${branchTrailer}` : `${tagName}\n\n${branchTrailer}`,
         object: sha,
         type: 'commit',
     });
